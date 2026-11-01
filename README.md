@@ -1,6 +1,6 @@
 # 福緣素食 Backstage
 
-在此 repo 集中管理 order 與 customer 的商品、價格、可售庫存、上下架與商品銷售分析。採用 Node.js 24 內建 SQLite，沒有額外 npm 套件，也不需要建置前端。
+在此 repo 集中管理 order 與 customer 的商品、價格、可售庫存、上下架與商品銷售分析。正式介面使用 GitHub Pages，並連接共用雲端 API／D1 資料庫；另保留 Node.js 24 內建 SQLite 的獨立自架版本。
 
 ## GitHub Pages 與共用資料服務
 
@@ -109,7 +109,7 @@ Docker 預設 `COOKIE_SECURE=true`，請透過正式 HTTPS 代理進入；本機
 
 完整災難還原請使用 SQLite 原生備份，或停機後備份整個 DB_PATH 所在資料目錄（包含可能存在的 WAL 檔案）。還原時先停機，再放回備份的資料目錄，確認 `DB_PATH` 與檔案權限後重啟。正式環境應由主機安排固定備份，這個 repo 不會自行建立排程。
 
-登入使用 HttpOnly、SameSite=Strict cookie，8 小時過期，伺服器重啟須重新登入。API 會檢查後台權限、跨站來源、資料格式與商品／訂單版本，避免多個編輯頁面互相覆寫。後台採單一管理員密碼，沒有多人帳號／操作稽核；分享密碼代表分享全部後台權限。
+獨立 Node.js 版本登入使用 HttpOnly、SameSite=Strict cookie，8 小時過期，伺服器重啟須重新登入。API 會檢查後台權限、跨站來源、資料格式與商品／訂單版本，避免多個編輯頁面互相覆寫。後台採單一管理員密碼，沒有多人帳號／操作稽核；分享密碼代表分享全部後台權限。
 
 ## 檔案
 
