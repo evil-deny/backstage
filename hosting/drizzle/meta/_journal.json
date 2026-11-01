@@ -8,6 +8,13 @@
       "when": 1793570951898,
       "tag": "0000_black_molecule_man",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1793572774528,
+      "tag": "0001_bizarre_domino",
+      "breakpoints": true
     }
   ]
 }

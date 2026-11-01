@@ -6,11 +6,14 @@ import {build} from 'esbuild';
 mkdirSync('.sites-runtime/test',{recursive:true});
 await build({entryPoints:['lib/backstage.ts'],bundle:true,platform:'node',format:'esm',outfile:'.sites-runtime/test/backstage.mjs'});
 const {handleBackstage}=await import('../.sites-runtime/test/backstage.mjs');
+await build({entryPoints:['lib/access.ts'],bundle:true,platform:'node',format:'esm',outfile:'.sites-runtime/test/access.mjs'});
+const {connectGithub,pkce}=await import('../.sites-runtime/test/access.mjs');
+const config={ADMIN_EMAILS:'owner@example.test'};
 const sql=new DatabaseSync(':memory:');
 for(const file of readdirSync('drizzle').filter(f=>f.endsWith('.sql')).sort())sql.exec(readFileSync('drizzle/'+file,'utf8'));
 function prepare(query,args=[]){return {bind(...values){return prepare(query,values);},async first(){return sql.prepare(query).get(...args)||null;},async all(){return {results:sql.prepare(query).all(...args)};},async run(){const r=sql.prepare(query).run(...args);return {meta:{changes:Number(r.changes)}};},_run(){return sql.prepare(query).run(...args);}};}
 const db={prepare,async batch(statements){sql.exec('BEGIN');try{const results=statements.map(s=>s._run());sql.exec('COMMIT');return results;}catch(e){sql.exec('ROLLBACK');throw e;}}};
-async function request(path,method='GET',body,auth=true,origin){const headers={...(auth?{'oai-authenticated-user-id':'test-owner'}:{}),...(body?{'Content-Type':'application/json'}:{}),...(origin?{Origin:origin}:{})};const r=await handleBackstage(new Request('https://site.example'+path,{method,headers,body:body?JSON.stringify(body):undefined}),db);return {status:r.status,data:await r.json()};}
+async function request(path,method='GET',body,auth=true,origin){const headers={...(auth?{'oai-authenticated-user-id':'test-owner','oai-authenticated-user-email':'owner@example.test'}:{}),...(body?{'Content-Type':'application/json'}:{}),...(origin?{Origin:origin}:{})};const r=await handleBackstage(new Request('https://site.example'+path,{method,headers,body:body?JSON.stringify(body):undefined}),db,config);return {status:r.status,data:r.status===204?null:await r.json(),headers:r.headers};}
 test('D1 版身份驗證、商品同步、批次庫存與歷史單價',async()=>{
  assert.equal((await request('/api/admin/products','GET',undefined,false)).status,401);
  assert.equal((await request('/api/staff')).data.admin,true);
@@ -22,7 +25,7 @@ test('D1 版身份驗證、商品同步、批次庫存與歷史單價',async()=>
  p=(await request('/api/admin/products/'+p.id,'PATCH',{...p,customerVisible:true})).data;
  const payload=(requestId,qty=2)=>({requestId,channel:'customer',name:'測試',phone:'0900000000',items:[{id:p.id,qty,price:100}]});
  const race=await Promise.all(['a','b'].map(id=>request('/api/orders','POST',payload(id))));assert.deepEqual(race.map(r=>r.status).sort(),[201,409]);
- const winner=race.find(r=>r.status===201),winnerId=race[0].status===201?'a':'b';assert.equal((await request('/api/orders','POST',payload(winnerId))).data.id,winner.data.id);
+ const winner=race.find(r=>r.status===201),winnerId=race[0].status===201?'a':'b';assert.equal((await request('/api/orders','POST',payload(winnerId))).data.id,winner.data.id);assert.equal((await request('/api/orders','POST',payload(winnerId,1))).status,409);
  p=(await request('/api/admin/products')).data.find(x=>x.id===p.id);assert.equal(p.stock,1);
  p=(await request('/api/admin/products/'+p.id,'PATCH',{...p,price:200})).data;
  assert.equal((await request('/api/orders','POST',payload('stale'))).status,409);
@@ -42,4 +45,41 @@ test('D1 batch 在中途發現庫存不足時整單回滾',async()=>{
  const o={id:'rollback-test',channel:'customer',items:[{id:a.id,qty:1,price:a.price},{id:b.id,qty:b.stock+1,price:b.price}]};
  await assert.rejects(repository.place(o,'rollback-request'));
  assert.equal((await repository.product(a.id)).stock,before);assert.equal(await repository.findRequest('rollback-request'),null);
+});
+
+test('GitHub Pages CORS、管理員白名單與一次性連接授權',async()=>{
+ const origin='https://evil-deny.github.io';
+ const preflight=await request('/api/admin/products','OPTIONS',undefined,false,origin);assert.equal(preflight.status,204);assert.equal(preflight.headers.get('access-control-allow-origin'),origin);
+ const publicCatalog=await request('/api/products','GET',undefined,false,origin);assert.equal(publicCatalog.status,200);assert.ok(publicCatalog.data.length>=197);
+ const wrongUser=await handleBackstage(new Request('https://site.example/api/admin/orders',{headers:{'oai-authenticated-user-id':'another-user','oai-authenticated-user-email':'someone@example.test'}}),db,config);assert.equal(wrongUser.status,401);
+ const noConfig=await handleBackstage(new Request('https://site.example/api/admin/orders',{headers:{'oai-authenticated-user-id':'test-owner','oai-authenticated-user-email':'owner@example.test'}}),db);assert.equal(noConfig.status,401);
+ const verifier='a'.repeat(64),state='b'.repeat(64),challenge=await pkce(verifier);
+ const connectUrl='https://site.example/connect?challenge='+challenge+'&state='+state;
+ const anonymous=await connectGithub(new Request(connectUrl),db,config);assert.equal(anonymous.status,302);assert.ok(anonymous.headers.get('location').includes('/signin-with-chatgpt?return_to='));
+ const connected=await connectGithub(new Request(connectUrl,{headers:{'oai-authenticated-user-id':'test-owner','oai-authenticated-user-email':'owner@example.test'}}),db,config);
+ assert.equal(connected.status,302);const callback=new URL(connected.headers.get('location'));assert.equal(callback.origin,origin);assert.equal(callback.pathname,'/backstage/');
+ const code=new URLSearchParams(callback.hash.slice(1)).get('code');
+ assert.equal((await request('/api/auth/exchange','POST',{code,verifier:'c'.repeat(64)},false,origin)).status,401);
+ const grant=await request('/api/auth/exchange','POST',{code,verifier},false,origin);assert.equal(grant.status,200);assert.equal(grant.data.token.length,64);
+ assert.equal((await request('/api/auth/exchange','POST',{code,verifier},false,origin)).status,401);
+ const authorized=await handleBackstage(new Request('https://site.example/api/admin/orders',{headers:{Origin:origin,Authorization:'Bearer '+grant.data.token}}),db,config);assert.equal(authorized.status,200);
+ assert.equal(sql.prepare('SELECT count(*) AS n FROM api_grants WHERE hash=?').get(grant.data.token).n,0);
+ await handleBackstage(new Request('https://site.example/api/logout',{method:'POST',headers:{Origin:origin,Authorization:'Bearer '+grant.data.token,'Content-Type':'application/json'},body:'{}'}),db,config);
+ const revoked=await handleBackstage(new Request('https://site.example/api/admin/orders',{headers:{Origin:origin,Authorization:'Bearer '+grant.data.token}}),db,config);assert.equal(revoked.status,401);
+});
+test('顧客免登入送單，員工流程保留揀貨、部分出貨與自訂品項',async()=>{
+ const all=(await request('/api/admin/products')).data,p=all.find(p=>p.stock>=3&&p.customerVisible&&p.price>0),q=all.find(q=>q.id!==p.id&&q.stock>=3&&q.orderVisible&&q.price>0);
+ const publicOrder=await request('/api/orders','POST',{requestId:'public-customer',channel:'customer',name:'顧客',phone:'0900000000',items:[{id:p.id,qty:1,price:p.price}]},false,'https://evil-deny.github.io');assert.equal(publicOrder.status,201);
+ const staffPayload={requestId:'staff-order',channel:'order',name:'員工測試',items:[{id:p.id,qty:1,price:p.price},{id:q.id,qty:2,price:q.price},{id:'custom-test',custom:true,name:'自訂商品',qty:1,price:75}]};
+ assert.equal((await request('/api/orders','POST',staffPayload,false)).status,401);
+ assert.equal((await request('/api/orders','POST',{...staffPayload,requestId:'fake-price',channel:'customer',phone:'0900000000'},false)).status,403);
+ const staffResult=await request('/api/orders','POST',staffPayload);assert.equal(staffResult.status,201);let o=(await request('/api/admin/orders')).data.find(o=>o.id===staffResult.data.id);
+ assert.equal((await request('/api/admin/products')).data.find(i=>i.id===q.id).stock,q.stock-2);
+ o=(await request('/api/admin/orders/'+o.id,'PATCH',{revision:o.revision,action:'pick',itemId:p.id,picked:true})).data;assert.equal(o.status,'picking');
+ o=(await request('/api/admin/orders/'+o.id,'PATCH',{revision:o.revision,action:'ship',pickedIds:[p.id,'custom-test']})).data;assert.equal(o.total,p.price+75);assert.equal((await request('/api/admin/products')).data.find(i=>i.id===q.id).stock,q.stock);
+ assert.equal((await request('/api/admin/orders/'+o.id,'PATCH',{revision:o.revision,action:'return',items:[{id:q.id,qty:1}]})).status,400);
+ o=(await request('/api/admin/orders/'+o.id,'PATCH',{revision:o.revision,action:'return',items:[{id:p.id,qty:1},{id:'custom-test',qty:1}]})).data;assert.ok(o.returnClosedAt);assert.equal(o.returns.length,2);
+ o=(await request('/api/admin/orders/'+o.id,'PATCH',{revision:o.revision,action:'archive'})).data;assert.ok(o.archivedAt);
+ const pending=(await request('/api/admin/orders')).data.find(o=>o.id===publicOrder.data.id);const cancelled=await request('/api/admin/orders/'+pending.id,'PATCH',{revision:pending.revision,action:'cancel'});assert.equal(cancelled.data.status,'cancelled');
+ assert.equal((await request('/api/admin/products')).data.find(i=>i.id===p.id).stock,p.stock);
 });

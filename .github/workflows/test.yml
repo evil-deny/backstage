@@ -9,3 +9,17 @@ jobs:
         with:
           node-version: 24
       - run: npm test
+  hosted-api:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: hosting
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: hosting/package-lock.json
+      - run: npm ci --include=dev --include=optional --no-audit --no-fund
+      - run: node --test test/hosted.test.mjs

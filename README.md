@@ -2,15 +2,27 @@
 
 在此 repo 集中管理 order 與 customer 的商品、價格、可售庫存、上下架與商品銷售分析。採用 Node.js 24 內建 SQLite，沒有額外 npm 套件，也不需要建置前端。
 
-## Sites 線上部署版
+## GitHub Pages 與共用資料服務
 
-`hosting/` 保留 Sites 部署使用的完整來源，使用 Cloudflare D1 持續儲存商品、庫存與訂單，並使用 ChatGPT 身份驗證。初始部署採擁有者私人存取，只有建立網站的帳號可進入後台與兩個訂購入口；顧客入口尚未公開。
+正式入口保留在 GitHub Pages：
 
-網站網址：<https://fuyuan-backstage.syrupydock1.chatgpt.site>。此網址是否已上線，以 Sites 部署結果為準。商品與訂單 API 路徑沿用本機版；本機 SQLite 與線上 D1 為各自獨立的資料庫，既有瀏覽器資料與本機預覽測試資料沒有搬到線上。
+- 營運後台：<https://evil-deny.github.io/backstage/>
+- 員工開單：<https://evil-deny.github.io/order/>
+- 顧客訂購：<https://evil-deny.github.io/customer/>
 
-線上版透過 Sites 建置／部署；單純推送 GitHub 不會觸發 Sites 更新。部署來源版本由 `hosting/.openai/hosting.json` 關聯的 Site 管理。若之後要開放一般顧客，需先加入明確的後台管理員授權，再調整整站存取設定；目前不應直接把這個私人版本切成公開。
+三個前端都連到同一個雲端 API 與 D1 資料庫。後台儲存價格、品項、可售庫存、order/customer 各自的顯示狀態後，order 每 15 秒、customer 每 20 秒更新，切回頁面也會更新；送單時一律由伺服器再驗證。日常商品維護不需要修改或推送三個 repo。
 
-線上版測試：在 `hosting/` 安裝依賴後執行 `node --test test/hosted.test.mjs`；根目錄 `npm test` 測試原本 Node.js 版本。
+顧客免登入。員工與後台使用管理員登入，由 Sites 既有 ChatGPT 身份驗證確認帳號，且伺服器檢查 `ADMIN_EMAILS` 白名單。GitHub 前端透過一次性連接碼與 PKCE 證明取得八小時 API 授權，僅放在當前分頁的 sessionStorage；伺服器只儲存授權的雜湊。新分頁需要重新連接；不使用跨站 cookie，也沒有把管理密碼／私密金鑰放進 GitHub。Sites 身份驗證是登入來源，GitHub 授權僅委派同一位管理員的 API 存取。
+
+公開範圍為商品目錄與顧客送單。訂單清單、個資、備份、商品修改、員工出貨／退貨一律需要管理權限。API 只允許此 Site 與 `https://evil-deny.github.io` 的瀏覽器來源；公開跨來源不代表後台管理權限。
+
+`index.html` 與 `assets/` 是 GitHub Pages 後台；`shared/cloud-sync.js` 是三個 repo 共用的連線來源。`hosting/` 保存 Sites API 部署的完整來源，雲端資料庫跨版本保存。API 網址仍是 <https://fuyuan-backstage.syrupydock1.chatgpt.site>，但使用者操作入口保留在原本 GitHub 網址；直接造訪 API 網址也保留管理介面。
+
+`hosting/` 修改須透過 Sites 建置／發布，單純推送 GitHub 不會更新 API。前端 GitHub Pages 從 main 根目錄發布。部署需先讓受保護的 API 版本與新增資料表生效，再公開 API，避免公開舊版管理權限。
+
+原先瀏覽器內的舊訂單與庫存調整不會自動匯入或覆寫雲端。既有資料保留於原瀏覽器；分析以共用資料庫中實際記錄的訂單為準。根目錄 Node.js 版本使用獨立本機 SQLite，供獨立自架與測試，與正式共用資料庫不同步。
+
+雲端版測試：在 `hosting/` 安裝依賴後執行 `node --test test/hosted.test.mjs`；根目錄 `npm test` 測試原本 Node.js 版本。
 
 ## 三個入口
 
@@ -22,7 +34,7 @@
 
 兩個整合入口使用相同商品與庫存；可獨立控制商品是否在 order、customer 顯示。修改後，新開頁面、切回頁面或按「更新商品」即可讀取；送單時伺服器再次驗證價格、上下架與庫存。後台按「重新整理」取得其他裝置的新資料。
 
-**本次不修改 `evil-deny/order`、`evil-deny/customer`。既有 GitHub Pages 網址仍使用原本各自的資料，不會自動受到此後台控制。使用整合功能須改用本服務的 `/order`、`/customer` 網址。** 此版將商品資料與訂購流程整合重建，沒有嵌入舊站的密碼 `0000` 或直接操控舊站 localStorage。
+原本 order／customer repo 已接上共用資料服務並保留操作介面。正式使用請走上方三個 GitHub Pages 網址；下面本機啟動說明適用獨立 Node.js 版本。
 
 ## 本機啟動
 

@@ -1,11 +1,17 @@
-# 福緣素食 Sites 線上版
+# 福緣共用資料服務
 
-來源：evil-deny/backstage。使用 Sites 擁有者私人存取與 Cloudflare D1。
+三個操作入口位於 GitHub Pages：
 
-入口：/、/order、/customer。私人發布期間三個入口僅擁有者可使用。沒有額外管理密碼。
+- https://evil-deny.github.io/backstage/
+- https://evil-deny.github.io/order/
+- https://evil-deny.github.io/customer/
 
-執行 npm run db:generate 產生資料庫 migrations；透過 Sites 工具建置與發布。初始 197 項商品取自 data/catalog.json，實際營運前請盤點庫存。
+此 Sites 服務提供共用 API、Cloudflare D1 與既有 ChatGPT 身份驗證。顧客可公開讀取上架商品並送單；商品修改、訂單資料與員工操作需要管理員權限。
 
-商品、庫存與訂單保存在託管 D1。批次送單與取消、出貨、退貨使用 D1 batch 與版本檢查，發生衝突時整個批次回滾。
+管理員由伺服器環境變數 ADMIN_EMAILS 指定，沒有白名單時一律拒絕。GitHub 前端的登入連接沿用 Sites 的 signin-with-chatgpt，透過固定回呼、一次性碼與 PKCE 取得八小時 API 委派授權。授權雜湊保存在 D1，原始授權只放在該分頁 sessionStorage，不依賴跨站 cookie。公開 Site 不等於公開後台。
 
-前端沿用本機版本，後端改用託管資料庫及 Sites 身份驗證。既有 order/customer repo 與網址不受影響。
+跨來源僅允許 https://evil-deny.github.io 與此 Site。部署順序須先發布包含管理員白名單的受保護版本及新增資料表，再開放 Site 公開讀取／顧客送單；不要公開舊版的僅憑登入就允許管理的版本。
+
+商品與訂單原有資料表保留。drizzle 的已發布 migrations 不可修改；新增 schema 先執行 npm run db:generate。測試執行 node --test test/hosted.test.mjs，建置與部署使用 Sites 工作流程。
+
+共用資料包含歷史名稱／單價快照、預留庫存、出貨、部分退貨、取消與封存。舊版僅存於使用者瀏覽器的訂單不會自動搬入。初始 197 項商品的庫存是原 repo 預設值，營運前需盤點校正。
