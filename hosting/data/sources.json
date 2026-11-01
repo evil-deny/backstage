@@ -1,0 +1,8 @@
+{
+  "repositories": {
+    "order": "09c09ed8183508b11a72c2b18b8e35cc3511707f",
+    "customer": "aec567746ea811385a6d23d32cabc7d9fcd037d2"
+  },
+  "products": 197,
+  "note": "價格與庫存來源 order；保存方式與類別來源 customer；無瀏覽器歷史訂單"
+}

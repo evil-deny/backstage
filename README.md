@@ -2,6 +2,16 @@
 
 在此 repo 集中管理 order 與 customer 的商品、價格、可售庫存、上下架與商品銷售分析。採用 Node.js 24 內建 SQLite，沒有額外 npm 套件，也不需要建置前端。
 
+## Sites 線上部署版
+
+`hosting/` 保留 Sites 部署使用的完整來源，使用 Cloudflare D1 持續儲存商品、庫存與訂單，並使用 ChatGPT 身份驗證。初始部署採擁有者私人存取，只有建立網站的帳號可進入後台與兩個訂購入口；顧客入口尚未公開。
+
+網站網址：<https://fuyuan-backstage.syrupydock1.chatgpt.site>。此網址是否已上線，以 Sites 部署結果為準。商品與訂單 API 路徑沿用本機版；本機 SQLite 與線上 D1 為各自獨立的資料庫，既有瀏覽器資料與本機預覽測試資料沒有搬到線上。
+
+線上版透過 Sites 建置／部署；單純推送 GitHub 不會觸發 Sites 更新。部署來源版本由 `hosting/.openai/hosting.json` 關聯的 Site 管理。若之後要開放一般顧客，需先加入明確的後台管理員授權，再調整整站存取設定；目前不應直接把這個私人版本切成公開。
+
+線上版測試：在 `hosting/` 安裝依賴後執行 `node --test test/hosted.test.mjs`；根目錄 `npm test` 測試原本 Node.js 版本。
+
 ## 三個入口
 
 | 路徑 | 用途 | 權限 |

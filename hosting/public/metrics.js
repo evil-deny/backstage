@@ -1,0 +1,9 @@
+export const day=iso=>new Date(iso).toLocaleDateString('sv-SE',{timeZone:'Asia/Taipei'});
+export function analyze(orders,{from='',to='',channel='all'}={}){
+ const filtered=orders.filter(o=>(!from||day(o.createdAt)>=from)&&(!to||day(o.createdAt)<=to)&&(channel==='all'||o.channel===channel));
+ const rows=new Map();let revenue=0,qty=0,returned=0,shipped=0,marketOrders=0;
+ for(const o of filtered){if(!['shipped','returned'].includes(o.status))continue;shipped++;if(o.market)marketOrders++;
+  for(const i of o.items){const row=rows.get(i.id)||{id:i.id,name:i.name,sold:0,returned:0,net:0,revenue:0};const ret=o.returns.filter(r=>r.id===i.id).reduce((s,r)=>s+r.qty,0);row.sold+=i.qty;row.returned+=ret;row.net+=i.qty-ret;row.revenue+=(i.qty-ret)*i.price;rows.set(i.id,row);revenue+=(i.qty-ret)*i.price;qty+=i.qty-ret;returned+=ret;}
+ }
+ return {orders:filtered.length,pending:filtered.filter(o=>o.status==='new').length,shipped,marketOrders,revenue,qty,returned,rows:[...rows.values()].sort((a,b)=>b.revenue-a.revenue||b.net-a.net)};
+}
