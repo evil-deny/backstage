@@ -1,7 +1,7 @@
 import {orderLabel,sourceLabel,sourceClass} from './order-display.js';
 import {analyze} from './metrics.js';
 const $=id=>document.getElementById(id),esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),money=v=>'NT$ '+Number(v).toLocaleString('zh-TW');
-let products=[],orders=[],editing=null,returning=null,view='overview',analysis;
+let products=[],orders=[],editing=null,returning=null,view='overview',analysis,googleLoginMounted=false;
 let confirmResolve=null;
 function ask(message){$('actionMessage').textContent=message;$('actionDialog').showModal();return new Promise(resolve=>{confirmResolve=resolve;});}
 $('confirmAction').onclick=()=>{const resolve=confirmResolve;confirmResolve=null;$('actionDialog').close();resolve?.(true);};
@@ -9,7 +9,8 @@ $('actionDialog').addEventListener('close',()=>{const resolve=confirmResolve;con
 const status={picking:'揀貨中',new:'待出貨',shipped:'已出貨',returned:'有退貨',cancelled:'已取消'};
 async function api(path,method='GET',body){try{return await FuyuanCloud.request('/'+path,method,body);}catch(e){if(e.status===401)showLogin();throw e;}}
 function toast(message){$('toast').textContent=message;$('toast').classList.add('show');clearTimeout(toast.timer);toast.timer=setTimeout(()=>$('toast').classList.remove('show'),6000);}
-function showLogin(){$('workspace').hidden=true;$('login').hidden=false;}
+function showLogin(){$('workspace').hidden=true;$('login').hidden=false;if(!googleLoginMounted){googleLoginMounted=true;$('googleLoginError').textContent='';$('retryGoogleLogin').hidden=true;FuyuanCloud.mountGoogle($('googleSignIn'),async()=>{googleLoginMounted=false;await refresh();},googleLoginError).catch(googleLoginError);}}
+function googleLoginError(e){googleLoginMounted=false;$('googleLoginError').textContent=e.message;$('retryGoogleLogin').hidden=false;}
 async function refresh(){[products,orders]=await Promise.all([api('admin/products'),api('admin/orders')]);$('workspace').hidden=false;$('login').hidden=true;render();$('updatedAt').textContent='更新於 '+new Date().toLocaleTimeString('zh-TW',{timeZone:'Asia/Taipei'});}
 const metric=(title,value,sub)=>`<article class="metric"><p>${title}</p><strong>${value}</strong><small>${sub}</small></article>`;
 const empty='<p class="empty">目前沒有符合的資料</p>';
@@ -49,7 +50,7 @@ for(const id of ['productSearch','visibilityFilter'])$(id).addEventListener(id==
 $('backup').onclick=()=>run(async()=>download('backstage-backup-'+new Date().toISOString().slice(0,10)+'.json',JSON.stringify(await api('admin/backup'),null,2)));
 $('exportProducts').onclick=()=>csv('商品目錄.csv',[['ID','商品','分類','保存','員工價','顧客價','可售庫存','order顯示','customer顯示'],...products.map(p=>[p.id,p.name,p.type,p.storage,p.orderPrice,p.price,p.stock??'不控管',p.orderVisible,p.customerVisible])]);
 $('exportAnalysis').onclick=()=>csv('商品銷售分析.csv',[['商品ID','商品','銷售件數','退貨件數','淨件數','淨銷售額'],...analysis.rows.map(r=>[r.id,r.name,r.sold,r.returned,r.net,r.revenue])]);
-$('connectAdmin').onclick=e=>{e.preventDefault();run(FuyuanCloud.connect);};
+$('retryGoogleLogin').onclick=()=>{googleLoginMounted=false;showLogin();};
 FuyuanCloud.ready.then(refresh).catch(e=>{if(!e.message.includes('登入'))toast(e.message);});
 setInterval(()=>{if(!document.hidden&&!$('workspace').hidden&&!document.querySelector('dialog[open]'))refresh().catch(e=>toast(e.message));},15000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!$('workspace').hidden)refresh().catch(e=>toast(e.message));});

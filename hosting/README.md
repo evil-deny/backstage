@@ -1,17 +1,13 @@
 # 福緣共用資料服務
 
-三個操作入口位於 GitHub Pages：
+正式入口：<https://evil-deny.github.io/backstage/>、<https://evil-deny.github.io/order/>、<https://evil-deny.github.io/customer/>。此 Sites 服務提供共用 API 與 Cloudflare D1；Sites 的既有發布整合保留，管理員身份改由店家指定的 Google Identity Services 驗證。
 
-- https://evil-deny.github.io/backstage/
-- https://evil-deny.github.io/order/
-- https://evil-deny.github.io/customer/
+管理後台採 Google 帳號登入。正式環境必須設定 `GOOGLE_CLIENT_ID` 及 `ADMIN_EMAILS`；未設定則拒絕管理存取。請在 Google Cloud 的網頁應用程式用戶端設定兩個 JavaScript 來源：`https://evil-deny.github.io` 與 `https://fuyuan-backstage.syrupydock1.chatgpt.site`。使用 popup callback，不需要 redirect URI 或用戶端密鑰。測試模式須把允許登入的管理員加入 Google Auth Platform 的測試使用者。
 
-此 Sites 服務提供共用 API、Cloudflare D1 與既有 ChatGPT 身份驗證。顧客可公開讀取上架商品並送單；商品修改、訂單資料與員工操作需要管理員權限。
+伺服器透過 jose 與 Google JWKS 驗證簽章、issuer、audience、有效時間及已驗證 email，再檢查管理員白名單。以 sub 識別 Google 帳號，nonce 綁定瀏覽器的 PKCE verifier 並原子性消耗。八小時的 API 授權僅儲存雜湊，並綁定 Google subject、email、client ID；原始 token 僅存在當前分頁 sessionStorage。白名單異動、換 client ID、授權過期或登出會使舊授權失效。舊 ChatGPT token、平台身份標頭及 `/api/auth/exchange` 都不再授予管理權限。
 
-管理員由伺服器環境變數 ADMIN_EMAILS 指定，沒有白名單時一律拒絕。GitHub 前端的登入連接沿用 Sites 的 signin-with-chatgpt，透過固定回呼、一次性碼與 PKCE 取得八小時 API 委派授權。授權雜湊保存在 D1，原始授權只放在該分頁 sessionStorage，不依賴跨站 cookie。公開 Site 不等於公開後台。
+`/api/auth/google/start` 產生短效挑戰，`/api/auth/google` 驗證 Google 憑證並發出管理授權。Google client ID 是公開識別碼；不要把任何 Gmail 密碼或用戶端密鑰放進原始碼。此登入流程沒有要求 Gmail 郵件權限。
 
-跨來源僅允許 https://evil-deny.github.io 與此 Site。部署順序須先發布包含管理員白名單的受保護版本及新增資料表，再開放 Site 公開讀取／顧客送單；不要公開舊版的僅憑登入就允許管理的版本。
+員工訂購、全部訂單、揀貨、出貨與退貨，依店家要求免登入；顧客送單共用同一待出貨清單。商品價格／庫存設定、分析與備份需要管理員 Google 登入。跨來源只允許此 Site 與 GitHub 網域。
 
-商品與訂單原有資料表保留。drizzle 的已發布 migrations 不可修改；新增 schema 先執行 npm run db:generate。測試執行 node --test test/hosted.test.mjs，建置與部署使用 Sites 工作流程。
-
-共用資料包含歷史名稱／單價快照、預留庫存、出貨、部分退貨、取消與封存。舊版僅存於使用者瀏覽器的訂單不會自動搬入。初始 197 項商品的庫存是原 repo 預設值，營運前需盤點校正。
+已發布 Drizzle migrations 不可修改。新增 schema 先執行 `npm run db:generate`；`0003` 保留歷史資料並使舊授權無法通過新的 provider 檢查。`node --test test/hosted.test.mjs` 驗證身份、庫存與訂單流程；建置及部署沿用 Sites 工作流程。

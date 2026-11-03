@@ -1,6 +1,6 @@
 import handler from "vinext/server/fetch-handler";
 import {handleBackstage} from '../lib/backstage';
-import {connectGithub} from '../lib/access';
+import {GITHUB_ADMIN} from '../lib/google-access';
 import { runWithConnectorBinding } from "../lib/connector-context";
 import type { ConnectorBinding } from "../lib/connector-contract.mjs";
 
@@ -8,7 +8,7 @@ const worker = {
   fetch(request: Request, env: Cloudflare.Env, ctx: ExecutionContext<{ CONNECTORS?: ConnectorBinding }>) {
     if(new URL(request.url).pathname==='/connect') {
       if(!env.DB)return Response.json({error:'資料庫尚未連線'},{status:503});
-      return connectGithub(request,env.DB,env);
+      return Response.redirect(GITHUB_ADMIN,302);
     }
     if(new URL(request.url).pathname.startsWith('/api/')) {
       if(!env.DB)return Response.json({error:'資料庫尚未連線'},{status:503});

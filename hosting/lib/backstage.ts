@@ -1,5 +1,5 @@
 import catalog from '../data/catalog.json';
-import {isAdmin,allowedOrigin,corsHeaders,exchange,revoke,digest,type AccessConfig} from './access';
+import {isAdmin,allowedOrigin,corsHeaders,startGoogleLogin,googleLogin,revoke,digest,type AccessConfig} from './google-access';
 type Product={id:string;name:string;category:string;type:string;storage:string;image:string;price:number;orderPrice:number;stock:number|null;orderVisible:boolean;customerVisible:boolean;revision:number};
 type Item={id:string;name:string;price:number;qty:number;market:boolean;returnedAt?:string;custom?:boolean;picked?:boolean};
 type Order={id:string;channel:string;name:string;phone:string;note:string;createdAt:string;status:string;items:Item[];returns:Item[];total:number;market:boolean;revision:number;shippedAt?:string;returnClosedAt?:string;archivedAt?:string;requestFingerprint?:string;submittedTotal?:number;submittedMarket?:boolean};
@@ -32,12 +32,15 @@ export async function handleBackstage(request:Request,db:D1Database,config:Acces
   if(method==='OPTIONS')return new Response(null,{status:204,headers:corsHeaders(request)});
   const admin=await isAdmin(request,db,config);
   if(path==='/api/health')return reply(200,{ok:true});
-  if(path.startsWith('/api/admin/')&&!admin)fail(401,'請先使用 ChatGPT 登入');
+  if(path==='/api/auth/config'&&method==='GET')return reply(200,{provider:'google',configured:!!config.GOOGLE_CLIENT_ID});
+  if(path.startsWith('/api/admin/')&&!admin)fail(401,'請先使用 Google 帳號登入');
   if(path==='/api/staff')return reply(200,{admin});
-  if(path==='/api/login'&&method==='POST'){if(!admin)fail(401,'請使用 ChatGPT 登入');return reply(200,{ok:true});}
+  if(path==='/api/login'&&method==='POST'){if(!admin)fail(401,'請使用 Google 帳號登入');return reply(200,{ok:true});}
   const repo=createRepository(db);if(!seeded)seeded=repo.seed().catch(e=>{seeded=null;throw e;});await seeded;
   let b:any={};if(['POST','PATCH'].includes(method)){if(Number(request.headers.get('content-length')||0)>1024*1024)fail(413,'資料超過 1 MB');const raw=await request.text();if(new TextEncoder().encode(raw).length>1024*1024)fail(413,'資料超過 1 MB');try{b=JSON.parse(raw);}catch{fail(400,'JSON 格式錯誤');}if(!b||typeof b!=='object'||Array.isArray(b))fail(400,'資料格式錯誤');}
-  if(path==='/api/auth/exchange'&&method==='POST'){const grant=await exchange(request,db,b);if(!grant)fail(401,'連接授權已過期，請重新登入');return reply(200,grant);}
+  if(path==='/api/auth/exchange')fail(410,'請改使用 Google 帳號登入');
+  if(path==='/api/auth/google/start'&&method==='POST')return reply(200,await startGoogleLogin(db,config,b));
+  if(path==='/api/auth/google'&&method==='POST'){const grant=await googleLogin(db,config,b);if(!grant)fail(401,'Google 登入憑證已失效，請重新登入');return reply(200,grant);}
   if(path==='/api/logout'&&method==='POST'){await revoke(request,db);return reply(200,{ok:true});}
   if(path==='/api/products'&&method==='GET'){const key=url.searchParams.get('channel')==='order'?'orderVisible':'customerVisible';return reply(200,(await repo.products()).filter(p=>p[key]).map(({orderPrice,...p})=>({...p,price:key==='orderVisible'?orderPrice:p.price})));}
   if(path==='/api/admin/products'&&method==='GET')return reply(200,await repo.products());

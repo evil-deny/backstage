@@ -12,7 +12,9 @@
 
 三個前端都連到同一個雲端 API 與 D1 資料庫。後台儲存價格、品項、可售庫存、order/customer 各自的顯示狀態後，order 每 15 秒、customer 每 20 秒更新，切回頁面也會更新；送單時一律由伺服器再驗證。日常商品維護不需要修改或推送三個 repo。
 
-員工與顧客訂購皆免登入，員工頁保留原本訂購／出貨／退貨流程，不含商品管理入口。後台使用管理員登入，由 Sites 既有 ChatGPT 身份驗證確認帳號，且伺服器檢查 `ADMIN_EMAILS` 白名單。GitHub 前端透過一次性連接碼與 PKCE 證明取得八小時 API 授權，僅放在當前分頁的 sessionStorage；伺服器只儲存授權的雜湊。新分頁需要重新連接；不使用跨站 cookie，也沒有把管理密碼／私密金鑰放進 GitHub。Sites 身份驗證是登入來源，GitHub 授權僅委派同一位管理員的 API 存取。
+員工與顧客訂購皆免登入，員工頁保留原本訂購／出貨／退貨流程，不含商品管理入口。正式後台使用 Google Identity Services「使用 Google 帳號登入」，伺服器以 Google 公鑰驗證 RS256 簽章、issuer、GOOGLE_CLIENT_ID audience、有效時間、已驗證的 email 與 ADMIN_EMAILS 管理員白名單。Google 的 sub 為帳號識別，nonce 與瀏覽器 PKCE verifier 綁定並一次性消耗，阻擋重播與登入 CSRF。
+
+登入後取得八小時 API 授權，伺服器只儲存 token 雜湊及 Google 帳號／用戶端關聯，原始 token 僅存於當前分頁 sessionStorage。登出會撤銷 API 授權；舊版 ChatGPT 授權及平台登入標頭不再授予管理權限。Google 用戶端只需身分登入，沒有 Gmail 郵件存取權，也不使用 OAuth 用戶端密鑰。
 
 公開範圍為各入口商品目錄與員工／顧客送單。員工免登入入口不驗證身份，任何取得網址的人都可查看員工價及以員工來源送單。依店家要求，員工訂單清單、聯絡資料及出貨／退貨操作透過公開 `/api/staff/orders` 提供；商品修改、備份、分析與 `/api/admin/*` 一律需要管理權限。API 只允許此 Site 與 `https://evil-deny.github.io` 的瀏覽器來源；公開跨來源不代表後台管理權限。
 

@@ -3,17 +3,20 @@ import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import {mkdirSync,readdirSync,readFileSync} from 'node:fs';
 import {build} from 'esbuild';
+import {generateKeyPair,exportJWK,SignJWT} from 'jose';
 mkdirSync('.sites-runtime/test',{recursive:true});
 await build({entryPoints:['lib/backstage.ts'],bundle:true,platform:'node',format:'esm',outfile:'.sites-runtime/test/backstage.mjs'});
 const {handleBackstage}=await import('../.sites-runtime/test/backstage.mjs');
-await build({entryPoints:['lib/access.ts'],bundle:true,platform:'node',format:'esm',outfile:'.sites-runtime/test/access.mjs'});
-const {connectGithub,pkce}=await import('../.sites-runtime/test/access.mjs');
-const config={ADMIN_EMAILS:'owner@example.test'};
+await build({entryPoints:['lib/google-access.ts'],bundle:true,platform:'node',format:'esm',outfile:'.sites-runtime/test/access.mjs'});
+const {pkce,digest}=await import('../.sites-runtime/test/access.mjs');
+const config={ADMIN_EMAILS:'owner@example.test',GOOGLE_CLIENT_ID:'test-client.apps.googleusercontent.com'};
+const adminToken='a'.repeat(64);
 const sql=new DatabaseSync(':memory:');
 for(const file of readdirSync('drizzle').filter(f=>f.endsWith('.sql')).sort())sql.exec(readFileSync('drizzle/'+file,'utf8'));
 function prepare(query,args=[]){return {bind(...values){return prepare(query,values);},async first(){return sql.prepare(query).get(...args)||null;},async all(){return {results:sql.prepare(query).all(...args)};},async run(){const r=sql.prepare(query).run(...args);return {meta:{changes:Number(r.changes)}};},_run(){return sql.prepare(query).run(...args);}};}
 const db={prepare,async batch(statements){sql.exec('BEGIN');try{const results=statements.map(s=>s._run());sql.exec('COMMIT');return results;}catch(e){sql.exec('ROLLBACK');throw e;}}};
-async function request(path,method='GET',body,auth=true,origin){const headers={...(auth?{'oai-authenticated-user-id':'test-owner','oai-authenticated-user-email':'owner@example.test'}:{}),...(body?{'Content-Type':'application/json'}:{}),...(origin?{Origin:origin}:{})};const r=await handleBackstage(new Request('https://site.example'+path,{method,headers,body:body?JSON.stringify(body):undefined}),db,config);return {status:r.status,data:r.status===204?null:await r.json(),headers:r.headers};}
+await db.prepare('INSERT INTO api_grants(hash,expires,provider,subject,email,audience) VALUES(?,?,?,?,?,?)').bind(await digest(adminToken),Date.now()+8*3600000,'google','test-owner','owner@example.test',config.GOOGLE_CLIENT_ID).run();
+async function request(path,method='GET',body,auth=true,origin){const headers={...(auth?{Authorization:'Bearer '+adminToken}:{}),...(body?{'Content-Type':'application/json'}:{}),...(origin?{Origin:origin}:{})};const r=await handleBackstage(new Request('https://site.example'+path,{method,headers,body:body?JSON.stringify(body):undefined}),db,config);return {status:r.status,data:r.status===204?null:await r.json(),headers:r.headers};}
 test('D1 版身份驗證、商品同步、批次庫存與歷史單價',async()=>{
  assert.equal((await request('/api/admin/products','GET',undefined,false)).status,401);
  assert.equal((await request('/api/staff')).data.admin,true);
@@ -47,26 +50,39 @@ test('D1 batch 在中途發現庫存不足時整單回滾',async()=>{
  assert.equal((await repository.product(a.id)).stock,before);assert.equal(await repository.findRequest('rollback-request'),null);
 });
 
-test('GitHub Pages CORS、管理員白名單與一次性連接授權',async()=>{
+test('Google 登入驗證簽章、audience、issuer、驗證信箱、nonce、PKCE 與舊登入撤銷',async()=>{
  const origin='https://evil-deny.github.io';
  const preflight=await request('/api/admin/products','OPTIONS',undefined,false,origin);assert.equal(preflight.status,204);assert.equal(preflight.headers.get('access-control-allow-origin'),origin);
- const publicCatalog=await request('/api/products','GET',undefined,false,origin);assert.equal(publicCatalog.status,200);assert.ok(publicCatalog.data.length>=197);
- const wrongUser=await handleBackstage(new Request('https://site.example/api/admin/orders',{headers:{'oai-authenticated-user-id':'another-user','oai-authenticated-user-email':'someone@example.test'}}),db,config);assert.equal(wrongUser.status,401);
- const noConfig=await handleBackstage(new Request('https://site.example/api/admin/orders',{headers:{'oai-authenticated-user-id':'test-owner','oai-authenticated-user-email':'owner@example.test'}}),db);assert.equal(noConfig.status,401);
- const verifier='a'.repeat(64),state='b'.repeat(64),challenge=await pkce(verifier);
- const connectUrl='https://site.example/connect?challenge='+challenge+'&state='+state;
- const anonymous=await connectGithub(new Request(connectUrl),db,config);assert.equal(anonymous.status,302);assert.ok(anonymous.headers.get('location').includes('/signin-with-chatgpt?return_to='));
- const connected=await connectGithub(new Request(connectUrl,{headers:{'oai-authenticated-user-id':'test-owner','oai-authenticated-user-email':'owner@example.test'}}),db,config);
- assert.equal(connected.status,302);const callback=new URL(connected.headers.get('location'));assert.equal(callback.origin,origin);assert.equal(callback.pathname,'/backstage/');
- const code=new URLSearchParams(callback.hash.slice(1)).get('code');
- assert.equal((await request('/api/auth/exchange','POST',{code,verifier:'c'.repeat(64)},false,origin)).status,401);
- const grant=await request('/api/auth/exchange','POST',{code,verifier},false,origin);assert.equal(grant.status,200);assert.equal(grant.data.token.length,64);
- assert.equal((await request('/api/auth/exchange','POST',{code,verifier},false,origin)).status,401);
- const authorized=await handleBackstage(new Request('https://site.example/api/admin/orders',{headers:{Origin:origin,Authorization:'Bearer '+grant.data.token}}),db,config);assert.equal(authorized.status,200);
- assert.equal(sql.prepare('SELECT count(*) AS n FROM api_grants WHERE hash=?').get(grant.data.token).n,0);
- await handleBackstage(new Request('https://site.example/api/logout',{method:'POST',headers:{Origin:origin,Authorization:'Bearer '+grant.data.token,'Content-Type':'application/json'},body:'{}'}),db,config);
- const revoked=await handleBackstage(new Request('https://site.example/api/admin/orders',{headers:{Origin:origin,Authorization:'Bearer '+grant.data.token}}),db,config);assert.equal(revoked.status,401);
+ const {publicKey,privateKey}=await generateKeyPair('RS256'),jwk={...await exportJWK(publicKey),kid:'test-google',alg:'RS256',use:'sig'};
+ const originalFetch=globalThis.fetch;globalThis.fetch=async url=>{assert.equal(String(url),'https://www.googleapis.com/oauth2/v3/certs');return Response.json({keys:[jwk]},{headers:{'Cache-Control':'public, max-age=3600'}});};
+ try{
+  const verifier='b'.repeat(64),challenge=await pkce(verifier);
+  const start=await request('/api/auth/google/start','POST',{challenge},false,origin);assert.equal(start.status,200);assert.equal(start.data.clientId,config.GOOGLE_CLIENT_ID);
+  const sign=async(extra={},options={})=>new SignJWT({email:'owner@example.test',email_verified:true,nonce:start.data.nonce,...extra}).setProtectedHeader({alg:'RS256',kid:'test-google'}).setSubject('google-subject-123').setIssuer(options.issuer??'https://accounts.google.com').setAudience(options.audience??config.GOOGLE_CLIENT_ID).setIssuedAt().setExpirationTime(options.expiration??'10m').sign(privateKey);
+  const credential=await sign();
+  const login=(token,secret=verifier)=>request('/api/auth/google','POST',{credential:token,verifier:secret},false,origin);
+  assert.equal((await login(await sign({},{audience:'attacker.apps.googleusercontent.com'}))).status,401);
+  assert.equal((await login(await sign({},{issuer:'https://evil.example'}))).status,401);
+  assert.equal((await login(await sign({},{expiration:Math.floor(Date.now()/1000)-60}))).status,401);
+  assert.equal((await login(await sign({email_verified:false}))).status,401);
+  assert.equal((await login(await sign({email:'other@example.test'}))).status,403);
+  assert.equal((await login(await sign({nonce:'c'.repeat(64)}))).status,401);
+  assert.equal((await login(credential,'c'.repeat(64))).status,401);
+  const tampered=credential.split('.');tampered[2]=(tampered[2][0]==='A'?'B':'A')+tampered[2].slice(1);assert.equal((await login(tampered.join('.'))).status,401);
+  const grant=await login(credential);assert.equal(grant.status,200);assert.equal(grant.data.token.length,64);assert.equal(grant.data.email,'owner@example.test');
+  assert.equal((await login(credential)).status,401);
+  const authorized=()=>handleBackstage(new Request('https://site.example/api/admin/orders',{headers:{Origin:origin,Authorization:'Bearer '+grant.data.token}}),db,config);
+  assert.equal((await authorized()).status,200);assert.equal(sql.prepare('SELECT count(*) AS n FROM api_grants WHERE hash=?').get(grant.data.token).n,0);
+  await handleBackstage(new Request('https://site.example/api/logout',{method:'POST',headers:{Origin:origin,Authorization:'Bearer '+grant.data.token,'Content-Type':'application/json'},body:'{}'}),db,config);assert.equal((await authorized()).status,401);
+  assert.equal((await request('/api/auth/exchange','POST',{code:'a'.repeat(64),verifier},false)).status,410);
+  const native=await handleBackstage(new Request('https://site.example/api/admin/orders',{headers:{'oai-authenticated-user-id':'owner','oai-authenticated-user-email':'owner@example.test'}}),db,config);assert.equal(native.status,401);
+  const legacyToken='d'.repeat(64);await db.prepare('INSERT INTO api_grants(hash,expires) VALUES(?,?)').bind(await digest(legacyToken),Date.now()+3600000).run();
+  const legacy=await handleBackstage(new Request('https://site.example/api/admin/orders',{headers:{Authorization:'Bearer '+legacyToken}}),db,config);assert.equal(legacy.status,401);
+  const missing=await handleBackstage(new Request('https://site.example/api/auth/google/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({challenge})}),db,{});assert.equal(missing.status,503);
+  const expired=await request('/api/auth/google/start','POST',{challenge},false);await db.prepare('UPDATE google_login_challenges SET expires=0 WHERE hash=?').bind(await digest(expired.data.nonce)).run();assert.equal((await login(await sign({nonce:expired.data.nonce}))).status,401);
+ }finally{globalThis.fetch=originalFetch;}
 });
+
 test('顧客免登入送單，員工流程保留揀貨、部分出貨與自訂品項',async()=>{
  const all=(await request('/api/admin/products')).data,p=all.find(p=>p.stock>=3&&p.customerVisible&&p.price>0),q=all.find(q=>q.id!==p.id&&q.stock>=3&&q.orderVisible&&q.price>0);
  const publicOrder=await request('/api/orders','POST',{requestId:'public-customer',channel:'customer',name:'顧客',phone:'0900000000',items:[{id:p.id,qty:1,price:p.price}]},false,'https://evil-deny.github.io');assert.equal(publicOrder.status,201);
