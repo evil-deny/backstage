@@ -71,7 +71,7 @@ test('顧客免登入送單，員工流程保留揀貨、部分出貨與自訂�
  const all=(await request('/api/admin/products')).data,p=all.find(p=>p.stock>=3&&p.customerVisible&&p.price>0),q=all.find(q=>q.id!==p.id&&q.stock>=3&&q.orderVisible&&q.price>0);
  const publicOrder=await request('/api/orders','POST',{requestId:'public-customer',channel:'customer',name:'顧客',phone:'0900000000',items:[{id:p.id,qty:1,price:p.price}]},false,'https://evil-deny.github.io');assert.equal(publicOrder.status,201);
  const staffPayload={requestId:'staff-order',channel:'order',name:'員工測試',items:[{id:p.id,qty:1,price:p.price},{id:q.id,qty:2,price:q.price},{id:'custom-test',custom:true,name:'自訂商品',qty:1,price:75}]};
- assert.equal((await request('/api/orders','POST',staffPayload,false)).status,401);
+ assert.equal((await request('/api/orders','POST',staffPayload,false)).status,403);
  assert.equal((await request('/api/orders','POST',{...staffPayload,requestId:'fake-price',channel:'customer',phone:'0900000000'},false)).status,403);
  const staffResult=await request('/api/orders','POST',staffPayload);assert.equal(staffResult.status,201);let o=(await request('/api/admin/orders')).data.find(o=>o.id===staffResult.data.id);
  assert.equal((await request('/api/admin/products')).data.find(i=>i.id===q.id).stock,q.stock-2);
@@ -82,4 +82,50 @@ test('顧客免登入送單，員工流程保留揀貨、部分出貨與自訂�
  o=(await request('/api/admin/orders/'+o.id,'PATCH',{revision:o.revision,action:'archive'})).data;assert.ok(o.archivedAt);
  const pending=(await request('/api/admin/orders')).data.find(o=>o.id===publicOrder.data.id);const cancelled=await request('/api/admin/orders/'+pending.id,'PATCH',{revision:pending.revision,action:'cancel'});assert.equal(cancelled.data.status,'cancelled');
  assert.equal((await request('/api/admin/products')).data.find(i=>i.id===p.id).stock,p.stock);
+});
+
+test('員工免登入、雙價格隔離、庫存一致、調價保留歷史與管理權限',async()=>{
+ const origin='https://evil-deny.github.io';
+ let p=(await request('/api/admin/products','POST',{name:'雙價格測試',category:'測試',type:'豆製品',storage:'冷藏',image:'',price:150,orderPrice:90,stock:4,orderVisible:true,customerVisible:true})).data;
+ const customer=(await request('/api/products?channel=customer','GET',undefined,false,origin)).data.find(x=>x.id===p.id);
+ const staff=(await request('/api/products?channel=order','GET',undefined,false,origin)).data.find(x=>x.id===p.id);
+ assert.equal(customer.price,150);assert.equal(staff.price,90);assert.equal('orderPrice' in customer,false);assert.equal('orderPrice' in staff,false);
+ const payload=(channel,price,id)=>({requestId:id,channel,name:'免登入測試',...(channel==='customer'?{phone:'0900000000'}:{}),items:[{id:p.id,price,qty:1}]});
+ assert.equal((await request('/api/orders','POST',payload('customer',90,'wrong-customer'),false,origin)).status,409);
+ assert.equal((await request('/api/orders','POST',payload('order',150,'wrong-staff'),false,origin)).status,409);
+ const a=await request('/api/orders','POST',payload('order',90,'anonymous-staff'),false,origin);assert.equal(a.status,201);assert.equal(a.data.total,90);
+ assert.equal((await request('/api/orders','POST',payload('order',90,'anonymous-staff'),false,origin)).data.id,a.data.id);
+ const b=await request('/api/orders','POST',payload('customer',150,'anonymous-customer'),false,origin);assert.equal(b.status,201);assert.equal(b.data.total,150);
+ p=(await request('/api/admin/products')).data.find(x=>x.id===p.id);assert.equal(p.stock,2);
+ p=(await request('/api/admin/products/'+p.id,'PATCH',{...p,orderPrice:80,price:160})).data;
+ assert.equal((await request('/api/orders','POST',payload('order',90,'stale-staff'),false,origin)).status,409);
+ assert.equal((await request('/api/orders','POST',payload('customer',150,'stale-customer'),false,origin)).status,409);
+ let orders=(await request('/api/admin/orders')).data;assert.equal(orders.find(o=>o.id===a.data.id).items[0].price,90);assert.equal(orders.find(o=>o.id===b.data.id).items[0].price,150);
+ assert.equal((await request('/api/admin/orders','GET',undefined,false,origin)).status,401);
+ assert.equal((await request('/api/admin/products/'+p.id,'PATCH',{...p,price:1},false,origin)).status,401);
+ assert.equal((await request('/api/admin/orders/'+a.data.id,'PATCH',{action:'ship',revision:1},false,origin)).status,401);
+ for(const id of [a.data.id,b.data.id]){const o=orders.find(x=>x.id===id);assert.equal((await request('/api/admin/orders/'+id,'PATCH',{action:'cancel',revision:o.revision})).data.status,'cancelled');}
+ assert.equal((await request('/api/admin/products')).data.find(x=>x.id===p.id).stock,4);
+ p=(await request('/api/admin/products')).data.find(x=>x.id===p.id);
+ p=(await request('/api/admin/products/'+p.id,'PATCH',{...p,orderPrice:0,orderVisible:false})).data;
+ assert.equal((await request('/api/products?channel=order','GET',undefined,false)).data.some(x=>x.id===p.id),false);
+ assert.equal((await request('/api/orders','POST',payload('order',0,'hidden-staff'),false)).status,409);
+ assert.equal((await request('/api/admin/products/'+p.id,'PATCH',{...p,orderPrice:-1})).status,400);
+ const fallback=(await request('/api/admin/products')).data.find(x=>x.id==='p1');assert.equal(fallback.orderPrice,fallback.price);
+ const repo=(await import('../.sites-runtime/test/backstage.mjs')).createRepository(db);
+ p=(await request('/api/admin/products/'+p.id,'PATCH',{...p,orderVisible:true})).data;
+ await assert.rejects(repo.place({id:'bad-price',channel:'order',items:[{id:p.id,qty:1,price:123}]},'atomic-price-check'));
+ assert.equal((await repo.product(p.id)).stock,4);
+});
+
+test('新增員工價欄位保留既有商品、庫存與原價',()=>{
+ const legacy=new DatabaseSync(':memory:');
+ const files=readdirSync('drizzle').filter(f=>f.endsWith('.sql')).sort();
+ for(const file of files.filter(f=>!f.startsWith('0002_')))legacy.exec(readFileSync('drizzle/'+file,'utf8'));
+ legacy.prepare('INSERT INTO inventory VALUES(?,?,?,?,?,?,?)').run('legacy',JSON.stringify({name:'既有商品'}),7,123,1,1,9);
+ legacy.exec(readFileSync('drizzle/'+files.find(f=>f.startsWith('0002_')),'utf8'));
+ const p=legacy.prepare('SELECT *,COALESCE(order_price,price) AS staff FROM inventory').get();
+ assert.equal(p.stock,7);assert.equal(p.price,123);assert.equal(p.staff,123);assert.equal(p.revision,9);assert.equal(p.body,JSON.stringify({name:'既有商品'}));
+ assert.throws(()=>legacy.prepare('UPDATE inventory SET order_price=-1').run(),/CHECK constraint/);
+ legacy.close();
 });

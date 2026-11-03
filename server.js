@@ -16,9 +16,10 @@ export function createApp({dbPath=process.env.DB_PATH||join(ROOT,'data','backsta
  const db=new DatabaseSync(dbPath);db.exec('PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; CREATE TABLE IF NOT EXISTS products(id TEXT PRIMARY KEY, body TEXT NOT NULL); CREATE TABLE IF NOT EXISTS orders(id TEXT PRIMARY KEY, request_id TEXT UNIQUE, body TEXT NOT NULL);');
  const sessions=new Map(),attempts=new Map();
  if(!db.prepare('SELECT id FROM products LIMIT 1').get())for(const p of JSON.parse(readFileSync(join(ROOT,'data','catalog.json'),'utf8')))db.prepare('INSERT INTO products VALUES(?,?)').run(p.id,JSON.stringify(p));
- const products=()=>db.prepare('SELECT body FROM products').all().map(r=>JSON.parse(r.body));
+ const decodeProduct=body=>{const p=JSON.parse(body);return {...p,orderPrice:p.orderPrice??p.price};};
+ const products=()=>db.prepare('SELECT body FROM products').all().map(r=>decodeProduct(r.body));
  const orders=()=>db.prepare('SELECT body FROM orders ORDER BY rowid DESC').all().map(r=>JSON.parse(r.body));
- const product=id=>{const row=db.prepare('SELECT body FROM products WHERE id=?').get(id);return row?JSON.parse(row.body):fail(404,'找不到商品');};
+ const product=id=>{const row=db.prepare('SELECT body FROM products WHERE id=?').get(id);return row?decodeProduct(row.body):fail(404,'找不到商品');};
  const order=id=>{const row=db.prepare('SELECT body FROM orders WHERE id=?').get(id);return row?JSON.parse(row.body):fail(404,'找不到訂單');};
  const saveProduct=p=>db.prepare('INSERT OR REPLACE INTO products VALUES(?,?)').run(p.id,JSON.stringify({...p,revision:(p.revision||0)+1}));
  const saveOrder=o=>db.prepare('UPDATE orders SET body=? WHERE id=?').run(JSON.stringify(o),o.id);
@@ -28,7 +29,7 @@ export function createApp({dbPath=process.env.DB_PATH||join(ROOT,'data','backsta
   const image=typeof b.image==='string'?b.image:'';if(image&&!/^https:\/\//i.test(image))fail(400,'圖片請使用 HTTPS 網址');
   if(!['冷凍','冷藏','乾貨'].includes(b.storage))fail(400,'請選擇保存方式');
   if(typeof b.orderVisible!=='boolean'||typeof b.customerVisible!=='boolean')fail(400,'請設定顯示狀態');
-  return {name:text(b.name,120),category:text(b.category,80),type:text(b.type,80),storage:b.storage,image:image.slice(0,3000),price:number(b.price),stock:b.stock===null?null:number(b.stock),orderVisible:b.orderVisible,customerVisible:b.customerVisible};
+  return {name:text(b.name,120),category:text(b.category,80),type:text(b.type,80),storage:b.storage,image:image.slice(0,3000),price:number(b.price),orderPrice:number(b.orderPrice??b.price),stock:b.stock===null?null:number(b.stock),orderVisible:b.orderVisible,customerVisible:b.customerVisible};
  };
  const server=http.createServer(async(req,res)=>{
   const reply=(status,data,headers={})=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff',...headers});res.end(JSON.stringify(data));};
@@ -49,16 +50,16 @@ export function createApp({dbPath=process.env.DB_PATH||join(ROOT,'data','backsta
     attempts.delete(key);for(const [key,expiry] of sessions)if(expiry<Date.now())sessions.delete(key);const t=randomBytes(32).toString('hex');sessions.set(t,Date.now()+8*3600e3);return reply(200,{ok:true},{'Set-Cookie':`session=${t}; HttpOnly; SameSite=Strict; Path=/; Max-Age=28800${secure?'; Secure':''}`});
    }
    if(path==='/api/logout'&&req.method==='POST'){sessions.delete(token);return reply(200,{ok:true},{'Set-Cookie':'session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0'});}
-   if(path==='/api/products'&&req.method==='GET'){const channel=url.searchParams.get('channel')==='order'?'order':'customer';return reply(200,products().filter(p=>p[channel+'Visible']));}
+   if(path==='/api/products'&&req.method==='GET'){const channel=url.searchParams.get('channel')==='order'?'order':'customer';return reply(200,products().filter(p=>p[channel+'Visible']).map(({orderPrice,...p})=>({...p,price:channel==='order'?orderPrice:p.price})));}
    if(path==='/api/admin/products'&&req.method==='GET')return reply(200,products());
    if(path==='/api/admin/products'&&req.method==='POST'){const p={...checkProduct(body),id:'p-'+randomUUID(),revision:0};saveProduct(p);return reply(201,product(p.id));}
-   if(path.startsWith('/api/admin/products/')&&req.method==='PATCH')return reply(200,transaction(()=>{const p=product(decodeURIComponent(path.split('/').at(-1)));if(body.revision!==p.revision)fail(409,'此商品已在其他視窗更新，請重新整理後編輯');saveProduct({...p,...checkProduct(body)});return product(p.id);}));
+   if(path.startsWith('/api/admin/products/')&&req.method==='PATCH')return reply(200,transaction(()=>{const p=product(decodeURIComponent(path.split('/').at(-1)));if(body.revision!==p.revision)fail(409,'此商品已在其他視窗更新，請重新整理後編輯');saveProduct({...p,...checkProduct({...body,orderPrice:body.orderPrice??p.orderPrice})});return product(p.id);}));
    if(path==='/api/orders'&&req.method==='POST')return reply(201,transaction(()=>{
     const requestId=text(body.requestId,80),existing=db.prepare('SELECT body FROM orders WHERE request_id=?').get(requestId);if(existing){const o=JSON.parse(existing.body);return {id:o.id,total:o.total,market:o.market};}
-    const channel=body.channel==='order'?'order':'customer';if(channel==='order'&&!admin)fail(401,'員工訂購請先登入');
+    const channel=body.channel==='order'?'order':'customer';
     const name=text(body.name,60),phone=typeof body.phone==='string'?body.phone.trim().slice(0,40):'';if(channel==='customer'&&!/^[\d+()\s-]{6,40}$/.test(phone))fail(400,'請填寫有效聯絡電話');
     if(!Array.isArray(body.items)||!body.items.length||body.items.length>300)fail(400,'請選擇 1 至 300 項商品');
-    const ids=new Set();const items=body.items.map(i=>{if(!i||typeof i!=='object')fail(400,'商品格式錯誤');const p=product(text(i.id,80)),qty=number(i.qty,9999);if(!qty||ids.has(p.id))fail(400,'商品重複或數量為零');ids.add(p.id);if(!p[channel+'Visible'])fail(409,`${p.name} 已隱藏，請重新整理`);if(i.price!==p.price)fail(409,`${p.name} 價格已調整，請重新整理確認`);if(p.stock!==null&&p.stock<qty)fail(409,`${p.name} 庫存不足（剩 ${p.stock}）`);return {id:p.id,name:p.name,price:p.price,market:p.price===0,qty};});
+    const ids=new Set();const items=body.items.map(i=>{if(!i||typeof i!=='object')fail(400,'商品格式錯誤');const p=product(text(i.id,80)),qty=number(i.qty,9999);if(!qty||ids.has(p.id))fail(400,'商品重複或數量為零');ids.add(p.id);if(!p[channel+'Visible'])fail(409,`${p.name} 已隱藏，請重新整理`);const price=channel==='order'?p.orderPrice:p.price;if(i.price!==price)fail(409,`${p.name} 價格已調整，請重新整理確認`);if(p.stock!==null&&p.stock<qty)fail(409,`${p.name} 庫存不足（剩 ${p.stock}）`);return {id:p.id,name:p.name,price,market:price===0,qty};});
     for(const i of items){const p=product(i.id);if(p.stock!==null){p.stock-=i.qty;saveProduct(p);}}
     const o={id:'FY-'+randomUUID(),channel,name,phone,note:typeof body.note==='string'?body.note.slice(0,500):'',createdAt:new Date().toISOString(),status:'new',items,returns:[],total:items.reduce((s,i)=>s+i.price*i.qty,0),market:items.some(i=>i.market),revision:1};
     db.prepare('INSERT INTO orders VALUES(?,?,?)').run(o.id,requestId,JSON.stringify(o));return {id:o.id,total:o.total,market:o.market};

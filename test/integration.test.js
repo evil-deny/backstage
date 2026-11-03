@@ -33,7 +33,7 @@ test('共用商品、訂單與庫存完整流程',async t=>{
  await t.test('送單防重複、保留成交價格、避免超賣',async()=>{
   const r=await request('/api/orders','POST',payload(),false);assert.equal(r.status,201);assert.equal(r.data.total,200);o=(await request('/api/admin/orders')).data[0];
   const again=await request('/api/orders','POST',payload(),false);assert.equal(again.data.id,o.id);p=(await request('/api/admin/products')).data.find(x=>x.id===p.id);assert.equal(p.stock,3);
-  assert.equal((await request('/api/orders','POST',{...payload('staff'),channel:'order'},false)).status,401);
+  const staff=await request('/api/orders','POST',{...payload('staff'),channel:'order'},false);assert.equal(staff.status,201);assert.equal((await request('/api/admin/orders/'+staff.data.id,'PATCH',{action:'cancel',revision:1})).status,200);
   assert.equal((await request('/api/orders','POST',payload('too-many',4),false)).status,409);
   assert.equal((await request('/api/orders','POST',{...payload('duplicate'),items:[...payload().items,...payload().items]},false)).status,400);
   assert.equal((await request('/api/orders','POST',payload('decimal',1.5),false)).status,400);
@@ -51,11 +51,11 @@ test('共用商品、訂單與庫存完整流程',async t=>{
   result=analyze((await request('/api/admin/orders')).data);assert.equal(result.revenue,100);assert.equal(result.returned,1);
   assert.equal((await request('/api/admin/orders/'+o.id,'PATCH',{revision:o.revision,action:'return',items:[{id:p.id,qty:2}]})).status,400);
   assert.equal((await request('/api/admin/orders/'+o.id,'PATCH',{revision:o.revision,action:'cancel'})).status,400);
-  assert.equal((await request('/api/admin/backup')).data.orders.length,2);
+  assert.equal((await request('/api/admin/backup')).data.orders.length,3);
  });
  await t.test('重新啟動後資料保留，登入狀態失效',async()=>{
   await new Promise(r=>server.close(r));server=createApp({dbPath,password});server.listen(0,'127.0.0.1');await once(server,'listening');base='http://127.0.0.1:'+server.address().port;
-  assert.equal((await request('/api/admin/orders')).status,401);cookie=(await request('/api/login','POST',{password})).headers.get('set-cookie').split(';')[0];assert.equal((await request('/api/admin/orders')).data.length,2);assert.equal((await request('/api/admin/products')).data.find(x=>x.id===p.id).stock,4);
+  assert.equal((await request('/api/admin/orders')).status,401);cookie=(await request('/api/login','POST',{password})).headers.get('set-cookie').split(';')[0];assert.equal((await request('/api/admin/orders')).data.length,3);assert.equal((await request('/api/admin/products')).data.find(x=>x.id===p.id).stock,4);
  });
 });
 test('分析依台灣下單日期、來源篩選，時價不虛增營業額',()=>{

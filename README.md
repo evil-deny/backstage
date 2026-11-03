@@ -10,11 +10,11 @@
 - 員工開單：<https://evil-deny.github.io/order/>
 - 顧客訂購：<https://evil-deny.github.io/customer/>
 
-三個前端都連到同一個雲端 API 與 D1 資料庫。後台儲存價格、品項、可售庫存、order/customer 各自的顯示狀態後，order 每 15 秒、customer 每 20 秒更新，切回頁面也會更新；送單時一律由伺服器再驗證。日常商品維護不需要修改或推送三個 repo。
+三個前端都連到同一個雲端 API 與 D1 資料庫。後台儲存價格、品項、可售庫存、order/customer 各自的顯示狀態後，order 與 customer 每 20 秒更新，切回頁面也會更新；送單時一律由伺服器再驗證。日常商品維護不需要修改或推送三個 repo。
 
-顧客免登入。員工與後台使用管理員登入，由 Sites 既有 ChatGPT 身份驗證確認帳號，且伺服器檢查 `ADMIN_EMAILS` 白名單。GitHub 前端透過一次性連接碼與 PKCE 證明取得八小時 API 授權，僅放在當前分頁的 sessionStorage；伺服器只儲存授權的雜湊。新分頁需要重新連接；不使用跨站 cookie，也沒有把管理密碼／私密金鑰放進 GitHub。Sites 身份驗證是登入來源，GitHub 授權僅委派同一位管理員的 API 存取。
+員工與顧客訂購皆免登入，員工頁不含管理入口。後台使用管理員登入，由 Sites 既有 ChatGPT 身份驗證確認帳號，且伺服器檢查 `ADMIN_EMAILS` 白名單。GitHub 前端透過一次性連接碼與 PKCE 證明取得八小時 API 授權，僅放在當前分頁的 sessionStorage；伺服器只儲存授權的雜湊。新分頁需要重新連接；不使用跨站 cookie，也沒有把管理密碼／私密金鑰放進 GitHub。Sites 身份驗證是登入來源，GitHub 授權僅委派同一位管理員的 API 存取。
 
-公開範圍為商品目錄與顧客送單。訂單清單、個資、備份、商品修改、員工出貨／退貨一律需要管理權限。API 只允許此 Site 與 `https://evil-deny.github.io` 的瀏覽器來源；公開跨來源不代表後台管理權限。
+公開範圍為各入口商品目錄與員工／顧客送單。員工免登入入口不驗證身份，任何取得網址的人都可查看員工價及以員工來源送單。訂單清單、個資、備份、商品修改、員工出貨／退貨一律需要管理權限。API 只允許此 Site 與 `https://evil-deny.github.io` 的瀏覽器來源；公開跨來源不代表後台管理權限。
 
 `index.html` 與 `assets/` 是 GitHub Pages 後台；`shared/cloud-sync.js` 是三個 repo 共用的連線來源。`hosting/` 保存 Sites API 部署的完整來源，雲端資料庫跨版本保存。API 網址仍是 <https://fuyuan-backstage.syrupydock1.chatgpt.site>，但使用者操作入口保留在原本 GitHub 網址；直接造訪 API 網址也保留管理介面。
 
@@ -29,12 +29,12 @@
 | 路徑 | 用途 | 權限 |
 | --- | --- | --- |
 | `/` | 營運總覽、商品管理、訂單、商品分析、CSV、備份 | 管理員登入 |
-| `/order` | 員工開單 | 送單須已登入 |
+| `/order` | 員工開單 | 免登入訂購；無管理功能 |
 | `/customer` | 顧客訂購、確認明細、送單、複製與 LINE 聯絡 | 公開訂購；不能查詢其他顧客訂單 |
 
 兩個整合入口使用相同商品與庫存；可獨立控制商品是否在 order、customer 顯示。修改後，新開頁面、切回頁面或按「更新商品」即可讀取；送單時伺服器再次驗證價格、上下架與庫存。後台按「重新整理」取得其他裝置的新資料。
 
-原本 order／customer repo 已接上共用資料服務並保留操作介面。正式使用請走上方三個 GitHub Pages 網址；下面本機啟動說明適用獨立 Node.js 版本。
+原本 order／customer repo 已接上共用資料服務；員工頁改為顧客式訂購介面。正式使用請走上方三個 GitHub Pages 網址；下面本機啟動說明適用獨立 Node.js 版本。
 
 ## 本機啟動
 
@@ -58,7 +58,7 @@ npm test
 
 - ID、名稱、價格、初始庫存與圖片：order 的 PRODUCTS。
 - 商品類別、冷凍／冷藏／乾貨：customer 的 PRODUCTS。
-- 兩 repo 此版本的價格相同；本次沒有變更商品價格。
+- 員工價 `orderPrice` 與顧客價 `price` 可分別設定，既有商品的兩種價格初始沿用原價。未設定員工價的舊資料會安全沿用原價，第一次儲存後獨立保存；歷史單價不變。
 - 初始庫存是原始碼預設值，**不是店家現場盤點值**。第一次營運前請在後台校正可售庫存。
 - `stock: null` 為不控管，`stock: 0` 為售完；`price: 0` 為時價。
 - 商品新增／編輯／隱藏寫入 SQLite；seed 檔只在新建空資料庫時載入。日常維護請使用後台，直接修改 seed 不會覆寫既有資料庫。

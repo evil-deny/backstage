@@ -15,6 +15,13 @@
       "when": 1793572774528,
       "tag": "0001_bizarre_domino",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1793688984305,
+      "tag": "0002_short_human_fly",
+      "breakpoints": true
     }
   ]
 }
