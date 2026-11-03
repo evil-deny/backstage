@@ -163,6 +163,7 @@
 <section class="modal" id="imageModal" role="dialog" aria-modal="true" aria-labelledby="imageTitle" hidden><div class="modal-card"><div class="modal-head"><h2 id="imageTitle">商品圖片</h2><button class="close" data-close="imageModal" aria-label="關閉圖片">×</button></div><div class="modal-body"><img class="photo" id="imagePreview" alt=""></div></div></section><div id="toast" class="toast" role="status"></div>
 <script src="/cloud-sync.js"></script>
 <script type="module">
+import {orderLabel} from "/order-display.js";
 // Product snapshot from order. No customer information is stored here.
 await FuyuanCloud.ready;
 const PRODUCTS=await FuyuanCloud.loadProducts('customer');
@@ -195,7 +196,7 @@ function renderProducts(){const keyword=$('search').value.trim().toLowerCase(),f
  for(const img of $('productList').querySelectorAll('img'))img.addEventListener('error',()=>{img.src='data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMDAiIGhlaWdodD0iMjAwIiB2aWV3Qm94PSIwIDAgMjAwIDIwMCI+PHJlY3Qgd2lkdGg9IjIwMCIgaGVpZ2h0PSIyMDAiIHJ4PSIxOCIgZmlsbD0iI2VlZjVmNSIvPjxwYXRoIGQ9Ik02MiAxMThjLTgtNDUgMjktNzAgNzktNjggMiA1Mi0yMiA4OS02NiA3N20tMi0xIDQ5LTUzIiBmaWxsPSJub25lIiBzdHJva2U9IiMwZjc2NmUiIHN0cm9rZS13aWR0aD0iOCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+PHRleHQgeD0iMTAwIiB5PSIxNjkiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZvbnQtc2l6ZT0iMjEiIGZpbGw9IiM1MjY5NmEiIGZvbnQtZmFtaWx5PSJzYW5zLXNlcmlmIj7npo/nt6PntKDpo588L3RleHQ+PC9zdmc+Cg==';},{once:true});updateTotal();}
 function openModal(id){lastFocus=document.activeElement;$(id).hidden=false;document.body.style.overflow='hidden';$(id).querySelector('button,a,input')?.focus();}
 function closeModal(id){$(id).hidden=true;if(!document.querySelector('.modal:not([hidden])'))document.body.style.overflow='';lastFocus?.focus();}
-function receiptText(o){return ['福緣素食｜訂購明細',`明細編號：${o.id}`,`填單時間：${o.createdAt}`,`大名：${o.name}`,`電話：${o.phone||'未填寫'}`,`備註：${o.note||'無'}`,'--------------------',...o.items.map((p,i)=>`${i+1}. ${p.name}\n   ${p.market?'時價':money(p.price)} × ${p.qty} = ${p.market?'待店家確認':money(p.price*p.qty)}`),'--------------------',`預估商品合計：${money(total(o.items))}${o.items.some(p=>p.market)?'（另有時價商品）':''}`,'價格、供貨及取貨方式以福緣回覆確認為準。','請店家協助確認這份訂購，謝謝。'].join('\n');}
+function receiptText(o){return ['福緣素食｜訂購明細',`明細編號：${orderLabel(o.id)}`,`填單時間：${o.createdAt}`,`大名：${o.name}`,`電話：${o.phone||'未填寫'}`,`備註：${o.note||'無'}`,'--------------------',...o.items.map((p,i)=>`${i+1}. ${p.name}\n   ${p.market?'時價':money(p.price)} × ${p.qty} = ${p.market?'待店家確認':money(p.price*p.qty)}`),'--------------------',`預估商品合計：${money(total(o.items))}${o.items.some(p=>p.market)?'（另有時價商品）':''}`,'價格、供貨及取貨方式以福緣回覆確認為準。','請店家協助確認這份訂購，謝謝。'].join('\n');}
 function editReceipt(id,value){
  if(!receiptEditable||!pending)return;
  setQty(id,value);pending.items=selected();drawReceipt(false);
@@ -210,7 +211,7 @@ function receiptItemMarkup(p,saved){
 function drawReceipt(saved=false){
  const o=pending;receiptEditable=!saved;
  $('receiptTitle').textContent=saved?'我的訂購明細':'確認訂購內容';
- $('receiptContent').innerHTML='<h2>福緣素食 訂購明細</h2><div class="receipt-status">'+(saved?'訂單已送至後台・等待福緣確認':'可直接增減數量或移除商品')+'</div><p class="receipt-meta">明細編號：'+esc(o.id)+'\n填單時間：'+esc(o.createdAt)+'\n大名：'+esc(o.name)+'\n電話：'+esc(o.phone||'未填寫')+'\n備註：'+esc(o.note||'無')+'</p>'+
+ $('receiptContent').innerHTML='<h2>福緣素食 訂購明細</h2><div class="receipt-status">'+(saved?'訂單已送至後台・等待福緣確認':'可直接增減數量或移除商品')+'</div><p class="receipt-meta">明細編號：'+esc(orderLabel(o.id))+'\n填單時間：'+esc(o.createdAt)+'\n大名：'+esc(o.name)+'\n電話：'+esc(o.phone||'未填寫')+'\n備註：'+esc(o.note||'無')+'</p>'+
  '<div class="receipt-items">'+o.items.map(p=>receiptItemMarkup(p,saved)).join('')+'</div>'+
  (!o.items.length?'<div class="empty">目前沒有商品，請按「返回修改」回到商品列表選購。</div>':'')+
  '<div class="receipt-total">預估合計 '+money(total(o.items))+(o.items.some(p=>p.market)?'＋時價商品':'')+'</div><p class="hint">實際供貨、價格及取貨方式以店家確認為準。</p>';
@@ -221,12 +222,12 @@ function drawReceipt(saved=false){
 function createReceipt(){if(!selected().length){toast('請至少選擇一項商品。');return;}const name=$('customerName').value.trim();if(!name){$('customerName').setCustomValidity('請輸入大名。');$('customerName').reportValidity();return;}$('customerName').setCustomValidity('');if($('customerPhone').value.replace(/\D/g,'').length<6||!$('customerPhone').checkValidity()){$('customerPhone').setCustomValidity('請填寫有效的聯絡電話（至少 6 碼）。');$('customerPhone').reportValidity();return;}const now=new Date();pending={id:'FY-'+now.toLocaleDateString('sv-SE',{timeZone:'Asia/Taipei'}).replaceAll('-','')+'-'+crypto.randomUUID().slice(0,8).toUpperCase(),createdAt:now.toLocaleString('zh-TW',{timeZone:'Asia/Taipei',hour12:false}),name,phone:$('customerPhone').value.trim(),note:$('customerNote').value.trim(),items:selected()};drawReceipt();openModal('receiptModal');}
 async function saveReceipt(){
  if(cloudSaving||!pending?.items.length)return;cloudSaving=true;$('saveOrder').disabled=true;
- try{pending.cloudRequestId??=cloudRequestId||FuyuanCloud.random();cloudRequestId=pending.cloudRequestId;const result=await FuyuanCloud.place({requestId:pending.cloudRequestId,channel:'customer',name:pending.name,phone:pending.phone,note:pending.note,items:pending.items.map(i=>({id:i.id,qty:i.qty,price:i.price}))});pending.id=result.id;pending.cloudSaved=true;cloudRequestId=null;if(!history.some(o=>o.id===pending.id))history.unshift(JSON.parse(JSON.stringify(pending)));history=history.slice(0,30);persist();drawReceipt(true);toast('訂單已送至福緣後台，請等待店家確認。');}
+ try{pending.cloudRequestId??=cloudRequestId||FuyuanCloud.random();cloudRequestId=pending.cloudRequestId;const result=await FuyuanCloud.place({requestId:pending.cloudRequestId,channel:'customer',name:pending.name,phone:pending.phone,note:pending.note,items:pending.items.map(i=>({id:i.id,qty:i.qty,price:i.price}))});pending.id=result.id;pending.cloudSaved=true;try{localStorage.setItem('fuyuan-orders-updated',String(Date.now()));}catch{}cloudRequestId=null;if(!history.some(o=>o.id===pending.id))history.unshift(JSON.parse(JSON.stringify(pending)));history=history.slice(0,30);persist();drawReceipt(true);toast('訂單已送至福緣後台及員工待出貨清單，請等待店家確認。');}
  catch(e){toast(e.status?e.message+'；請確認明細或更新商品後再操作。':'連線結果尚未確認，請在此明細按「送出」重試；重試不會重複建立訂單。');}
  finally{cloudSaving=false;$('saveOrder').disabled=!pending?.items.length;}
 }
 async function copyReceipt(){try{await navigator.clipboard.writeText(receiptText(pending));toast('明細已複製，請貼到福緣 LINE 並傳送。');return true;}catch{$('receiptText').focus();$('receiptText').select();toast('請長按或按 Ctrl+C 複製下方明細。');return false;}}
-function showHistory(){$('historyList').innerHTML=history.map((o,i)=>`<article class="history-card"><strong>${esc(o.id)}</strong><p>${esc(o.createdAt)}・${esc(o.name)}</p><p>${o.items.length} 種商品・${money(total(o.items))}${o.items.some(p=>p.market)?'＋時價':''}</p><button class="primary" data-history="${i}">查看明細</button></article>`).join('')||'<div class="empty">尚未產生訂購明細。選好商品後，按「送出訂單並保存明細」。</div>';openModal('historyModal');}
+function showHistory(){$('historyList').innerHTML=history.map((o,i)=>`<article class="history-card"><strong>${esc(orderLabel(o.id))}</strong><p>${esc(o.createdAt)}・${esc(o.name)}</p><p>${o.items.length} 種商品・${money(total(o.items))}${o.items.some(p=>p.market)?'＋時價':''}</p><button class="primary" data-history="${i}">查看明細</button></article>`).join('')||'<div class="empty">尚未產生訂購明細。選好商品後，按「送出訂單並保存明細」。</div>';openModal('historyModal');}
 document.addEventListener('click',e=>{
  const receiptButton=e.target.closest('[data-receipt-plus],[data-receipt-minus],[data-receipt-remove]');
  if(receiptButton){const id=receiptButton.dataset.receiptPlus||receiptButton.dataset.receiptMinus||receiptButton.dataset.receiptRemove;editReceipt(id,receiptButton.dataset.receiptRemove?0:(cart[id]||0)+(receiptButton.dataset.receiptPlus?1:-1));return;}

@@ -79,7 +79,7 @@ export function createApp({dbPath=process.env.DB_PATH||join(ROOT,'data','backsta
    if(path==='/api/health'&&req.method==='GET')return reply(200,{ok:true});
    if(path.startsWith('/api/'))fail(404,'找不到 API');
    if(!['GET','HEAD'].includes(req.method))fail(405,'不支援的操作');
-   const files={'/':'index.html','/order':'shop.html','/customer':'shop.html','/app.js':'app.js','/shop.js':'shop.js','/metrics.js':'metrics.js','/style.css':'style.css','/logo.jpg':'logo.jpg'};const file=files[path];if(!file)fail(404,'找不到頁面');
+   const files={'/':'index.html','/order':'shop.html','/customer':'shop.html','/app.js':'app.js','/shop.js':'shop.js','/order-display.js':'order-display.js','/metrics.js':'metrics.js','/style.css':'style.css','/logo.jpg':'logo.jpg'};const file=files[path];if(!file)fail(404,'找不到頁面');
    const data=readFileSync(join(ROOT,'public',file)),mime={'html':'text/html','js':'text/javascript','css':'text/css','jpg':'image/jpeg'}[file.split('.').at(-1)];
    res.writeHead(200,{'Content-Type':mime+'; charset=utf-8','Cache-Control':'no-cache','X-Content-Type-Options':'nosniff','Referrer-Policy':'same-origin','Content-Security-Policy':"default-src 'self'; img-src 'self' https: data:; style-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"});res.end(req.method==='HEAD'?undefined:data);
   }catch(e){if(!e.status)console.error(e);if(!res.headersSent)reply(e.status||500,{error:e.status?e.message:'伺服器發生錯誤，請稍後再試'});else res.end();}

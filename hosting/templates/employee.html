@@ -218,6 +218,14 @@
 @media(max-width:380px){#productList .item{grid-template-columns:112px minmax(0,1fr)}
 #productList .item .item-media img{width:112px;height:112px}}
 #openAdmin[hidden]{display:none!important}
+
+.order-meta{display:flex;align-items:center;flex-wrap:wrap;gap:10px 14px;margin-top:10px;font-size:13px;color:#52645c}
+.order-number{font-weight:650;font-variant-numeric:tabular-nums;color:#344c40}
+.order-source{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;border:1px solid transparent;border-radius:7px;padding:5px 11px;font-size:14px;font-weight:750;line-height:1.5}
+.order-source.staff{color:#1e40af;background:#eff6ff;border-color:#bfdbfe}
+.order-source.customer{color:#166534;background:#f0fdf4;border-color:#bbf7d0}
+
+.short-order{font-size:.8em;color:#52645c;font-weight:600;margin:0 8px}.order-sync{display:flex;align-items:center;justify-content:flex-end;gap:12px;margin:0 0 12px;font-size:14px;color:#64748b}.order-sync button{min-height:38px;font-size:16px}
 </style>
 </head>
 <body>
@@ -233,6 +241,7 @@
       <button class="main-tab" data-main-view="returnPage">退貨</button>
     </div>
 
+    <div class="order-sync"><span id="orderSyncStatus" role="status">訂單每 15 秒同步</span><button class="secondary" id="refreshOrders">更新訂單 ↻</button></div>
     <section class="main-view active" id="orderPage">
       <section class="box customer-box">
         <label>大名<input id="customerName" autocomplete="name" placeholder="請輸入大名"></label>
@@ -270,9 +279,10 @@
 
   <script src="/cloud-sync.js"></script>
   <script type="module">
+    import {orderLabel,sourceLabel,sourceClass} from "/order-display.js";
     await FuyuanCloud.ready;
     const PRODUCTS=await FuyuanCloud.loadProducts('order');
-    const CLOUD_ORDERS=await FuyuanCloud.request('/staff/orders');
+    const CLOUD_ORDERS=await FuyuanCloud.request('/staff/orders').catch(e=>{FuyuanCloud.notice('訂單尚未同步，請按「更新訂單」重試。');return [];});
     // Authentication is enforced by the shared API, not by a browser password.
     const STORE_KEY = "clearOrderSystemV3";
     const PLACEHOLDER = "https://evil-deny.github.io/order/assets/logo.jpg";
@@ -640,17 +650,17 @@
       const weekOrders=state.orders.filter(o=>orderDate(o)>=weekStart);
       const monthOrders=state.orders.filter(o=>orderDate(o)>=monthStart);
       const sumNet=orders=>orders.reduce((s,o)=>s+(o.status==="shipped"||o.status==="returned"?orderNet(o):0),0);
-      const detail=orders=>orders.map(o=>`<div class="line"><span>${dateKey(orderDate(o))}｜${o.id}<br><small>${statusText(o.status)} · 送單 ${o.createdAt||"-"}${o.shippedAt?` · 出貨 ${o.shippedAt}`:""}${o.returnedAt?` · 退貨 ${o.returnedAt}`:""}${o.returnClosedAt?` · 退貨結案 ${o.returnClosedAt}`:""}</small></span><strong>${money(o.status==="shipped"||o.status==="returned"?orderNet(o):0)}</strong></div>`).join("")||`<div class="empty">此區間尚無訂單。</div>`;
+      const detail=orders=>orders.map(o=>`<div class="line"><span>${dateKey(orderDate(o))}｜${attrText(orderLabel(o.id))}<br><small>${statusText(o.status)} · 送單 ${o.createdAt||"-"}${o.shippedAt?` · 出貨 ${o.shippedAt}`:""}${o.returnedAt?` · 退貨 ${o.returnedAt}`:""}${o.returnClosedAt?` · 退貨結案 ${o.returnClosedAt}`:""}</small></span><strong>${money(o.status==="shipped"||o.status==="returned"?orderNet(o):0)}</strong></div>`).join("")||`<div class="empty">此區間尚無訂單。</div>`;
       document.getElementById("overview").innerHTML=`<div class="metrics"><div class="metric"><span>訂單數</span><strong>${state.orders.length}</strong></div><div class="metric"><span>待出貨</span><strong>${pending}</strong></div><div class="metric"><span>已出貨</span><strong>${shipped}</strong></div><div class="metric"><span>淨營業額</span><strong>${money(gross-returns)}</strong></div><div class="metric"><span>本週營業額</span><strong>${money(sumNet(weekOrders))}</strong></div><div class="metric"><span>本月營業額</span><strong>${money(sumNet(monthOrders))}</strong></div><div class="metric"><span>本週訂單</span><strong>${weekOrders.length}</strong></div><div class="metric"><span>本月訂單</span><strong>${monthOrders.length}</strong></div></div><h3>本週明細</h3><div class="receipt-list">${detail(weekOrders)}</div><h3>本月明細</h3><div class="receipt-list">${detail(monthOrders)}</div><h3>全部訂單</h3>${state.orders.map(orderCard).join("")||`<div class="empty">目前尚無訂單。</div>`}`;
       renderDailySummary(); renderInventory();
     }
     function orderCard(order){
       const shipped=order.status==="shipped"||order.status==="returned";
-      return `<div class="order-card"><div class="order-title"><span>${attrText(order.name)}｜${order.id}</span><span class="badge ${order.status}">${statusText(order.status)}</span></div><div class="meta">送單 ${order.createdAt || "-"}${order.shippedAt?` · 出貨 ${order.shippedAt}`:""}${order.returnedAt?` · 退貨 ${order.returnedAt}`:""}</div><div class="receipt-list">${order.items.map(i=>`<div class="line"><span>${itemName(i)} · 單價 ${money(itemPrice(i))} × ${i.qty}${shipped?`<br><small>${i.picked?"已出貨":"未出貨/缺貨"}</small>`:""}</span><strong>${money(shipped?shippedSubtotal(i):itemSubtotal(i))}</strong></div>`).join("")}</div><div><strong>總計：</strong>${money(orderNet(order))}${order.note?` ｜備註：${attrText(order.note)}`:""}</div><div class="actions"><button class="danger" data-delete-order="${order.id}">取消／封存這筆明細</button></div></div>`;
+      return `<div class="order-card"><div class="order-title"><span>${attrText(order.name)} <span class="short-order" title="${attrText(order.id)}">${attrText(orderLabel(order.id))}</span> <span class="order-source ${sourceClass(order.channel)}">${sourceLabel(order.channel)}</span></span><span class="badge ${order.status}">${statusText(order.status)}</span></div><div class="meta">送單 ${order.createdAt || "-"}${order.shippedAt?` · 出貨 ${order.shippedAt}`:""}${order.returnedAt?` · 退貨 ${order.returnedAt}`:""}</div><div class="receipt-list">${order.items.map(i=>`<div class="line"><span>${itemName(i)} · 單價 ${money(itemPrice(i))} × ${i.qty}${shipped?`<br><small>${i.picked?"已出貨":"未出貨/缺貨"}</small>`:""}</span><strong>${money(shipped?shippedSubtotal(i):itemSubtotal(i))}</strong></div>`).join("")}</div><div><strong>總計：</strong>${money(orderNet(order))}${order.note?` ｜備註：${attrText(order.note)}`:""}</div><div class="actions"><button class="danger" data-delete-order="${order.id}">取消／封存這筆明細</button></div></div>`;
     }
     function renderShipping(){
       const orders=state.orders.filter(o=>o.status==="new"||o.status==="picking");
-      document.getElementById("shipPage").innerHTML=`<section class="category"><div class="category-title"><span>出貨劃記</span><span class="category-count">${orders.length} 張</span></div><div style="padding:10px"><div class="empty">送單時會先預留庫存；只勾實際出貨的品項，未勾的品項會釋放預留庫存，並且不計入銷售額。</div>${orders.map(o=>`<div class="order-card"><div class="order-title"><span>${attrText(o.name)}｜${o.id}</span><span class="badge">${statusText(o.status)}</span></div><div class="meta">送單 ${o.createdAt || "-"}</div><div class="pick-list">${o.items.map(i=>`<label class="check"><input type="checkbox" data-pick="${o.id}" data-product="${i.id}" ${i.picked?"checked":""}><span>${itemName(i)} · 單價 ${money(itemPrice(i))}</span><strong>× ${i.qty}</strong></label>`).join("")}</div><div class="actions"><button class="primary" data-ship="${o.id}">完成出貨</button></div></div>`).join("")||`<div class="empty">沒有待出貨訂單。</div>`}</div></section>`;
+      document.getElementById("shipPage").innerHTML=`<section class="category"><div class="category-title"><span>出貨劃記</span><span class="category-count">${orders.length} 張</span></div><div style="padding:10px"><div class="empty">送單時會先預留庫存；只勾實際出貨的品項，未勾的品項會釋放預留庫存，並且不計入銷售額。</div>${orders.map(o=>`<div class="order-card"><div class="order-title"><span>${attrText(o.name)} <span class="short-order" title="${attrText(o.id)}">${attrText(orderLabel(o.id))}</span> <span class="order-source ${sourceClass(o.channel)}">${sourceLabel(o.channel)}</span></span><span class="badge">${statusText(o.status)}</span></div><div class="meta">送單 ${o.createdAt || "-"}</div><div class="pick-list">${o.items.map(i=>`<label class="check"><input type="checkbox" data-pick="${o.id}" data-product="${i.id}" ${i.picked?"checked":""}><span>${itemName(i)} · 單價 ${money(itemPrice(i))}</span><strong>× ${i.qty}</strong></label>`).join("")}</div><div class="actions"><button class="primary" data-ship="${o.id}">完成出貨</button></div></div>`).join("")||`<div class="empty">沒有待出貨訂單。</div>`}</div></section>`;
     }
     function returnedQty(order,item){
       return (order.returns||[]).filter(r=>r.id===item.id && !!r.custom===!!item.custom && r.name===item.name).reduce((s,r)=>s+r.qty,0);
@@ -659,7 +669,7 @@
       const orders=state.orders.filter(o=>(o.status==="shipped"||o.status==="returned") && !o.returnClosedAt);
       document.getElementById("returnPage").innerHTML=`<section class="category"><div class="category-title"><span>退貨處理</span><span class="category-count">${orders.length} 張</span></div><div style="padding:10px">${orders.map(o=>{
         const available=o.items.map((i,idx)=>({...i,idx,available:shippedQty(i)-returnedQty(o,i)})).filter(i=>i.available>0);
-        return `<div class="order-card"><div class="order-title"><span>${attrText(o.name)}｜${o.id}</span><span class="badge ${o.status}">${o.status==="returned"?"已有退貨紀錄":"可退貨"}</span></div><div class="meta">${o.returnedAt?`上次退貨 ${o.returnedAt}`:`出貨 ${o.shippedAt || "-"}`}</div>${available.length?`<div class="return-grid">${available.map(i=>`<label class="return-line"><input type="checkbox" data-return-check="${o.id}" data-index="${i.idx}"><span>${itemName(i)} · 單價 ${money(itemPrice(i))}<br><small>可退 ${i.available}</small></span><input type="number" min="1" max="${i.available}" value="${i.available}" data-return-qty="${o.id}" data-index="${i.idx}"></label>`).join("")}</div><div class="actions"><button class="danger" data-complete-return="${o.id}">完成退貨並回補庫存</button><button class="secondary" data-no-return="${o.id}">不退貨，移除這張</button></div>`:`<div class="empty">此訂單所有品項都已處理退貨。</div><div class="actions"><button class="secondary" data-no-return="${o.id}">退貨完成，移除這張</button></div>`}</div>`;
+        return `<div class="order-card"><div class="order-title"><span>${attrText(o.name)} <span class="short-order" title="${attrText(o.id)}">${attrText(orderLabel(o.id))}</span> <span class="order-source ${sourceClass(o.channel)}">${sourceLabel(o.channel)}</span></span><span class="badge ${o.status}">${o.status==="returned"?"已有退貨紀錄":"可退貨"}</span></div><div class="meta">${o.returnedAt?`上次退貨 ${o.returnedAt}`:`出貨 ${o.shippedAt || "-"}`}</div>${available.length?`<div class="return-grid">${available.map(i=>`<label class="return-line"><input type="checkbox" data-return-check="${o.id}" data-index="${i.idx}"><span>${itemName(i)} · 單價 ${money(itemPrice(i))}<br><small>可退 ${i.available}</small></span><input type="number" min="1" max="${i.available}" value="${i.available}" data-return-qty="${o.id}" data-index="${i.idx}"></label>`).join("")}</div><div class="actions"><button class="danger" data-complete-return="${o.id}">完成退貨並回補庫存</button><button class="secondary" data-no-return="${o.id}">不退貨，移除這張</button></div>`:`<div class="empty">此訂單所有品項都已處理退貨。</div><div class="actions"><button class="secondary" data-no-return="${o.id}">退貨完成，移除這張</button></div>`}</div>`;
       }).join("")||`<div class="empty">尚無可退貨訂單。</div>`}</div></section>`;
     }
     function renderInventory(){
@@ -737,7 +747,7 @@
       const rInc=e.target.closest("[data-receipt-inc]"); if(rInc){ const i=pendingOrder.items[Number(rInc.dataset.receiptInc)]; if(!i.custom && state.stock[i.id]!==null) i.qty=Math.min(state.stock[i.id],i.qty+1); else i.qty+=1; drawReceipt(); syncPendingToPage(); }
       const rRemove=e.target.closest("[data-receipt-remove]"); if(rRemove){ pendingOrder.items.splice(Number(rRemove.dataset.receiptRemove),1); drawReceipt(); syncPendingToPage(); }
       const tab=e.target.closest("[data-admin-tab]"); if(tab){ document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("active",b===tab)); document.querySelectorAll(".admin-view").forEach(v=>v.classList.toggle("active",v.id===tab.dataset.adminTab)); }
-      const mainTab=e.target.closest("[data-main-view]"); if(mainTab) setMainView(mainTab.dataset.mainView);
+      const mainTab=e.target.closest("[data-main-view]"); if(mainTab){setMainView(mainTab.dataset.mainView);if(mainTab.dataset.mainView!=='orderPage')refreshCloud(true).catch(e=>FuyuanCloud.notice('訂單更新失敗：'+e.message));}
       const ship=e.target.closest("[data-ship]"); if(ship){ const o=state.orders.find(x=>x.id===ship.dataset.ship); const picked=o.items.filter(i=>i.picked); const missing=o.items.filter(i=>!i.picked); if(!picked.length && !confirm("這張訂單沒有勾選任何品項，仍要完成出貨？這筆會以 0 元出貨，不扣庫存。")) return; if(missing.length && !confirm(`以下品項未出貨/缺貨，不會扣庫存也不算銷售額：\n${missing.map(i=>itemName(i)+" × "+i.qty).join("\n")}\n\n確定完成出貨？`)) return; o.status="shipped"; o.shippedAt=nowText(); picked.forEach(i=>{ if(!i.custom && state.stock[i.id]!==null) state.stock[i.id]=Math.max(0,state.stock[i.id]-i.qty); }); saveState(); renderAdmin(); renderProducts(); renderShipping(); renderReturns(); alert(`${o.id} 已完成出貨：${picked.length?picked.map(i=>itemName(i)+" × "+i.qty).join("、"):"無出貨品項"}`); }
       const completeReturn=e.target.closest("[data-complete-return]"); if(completeReturn){ const o=state.orders.find(x=>x.id===completeReturn.dataset.completeReturn); const checks=[...document.querySelectorAll(`[data-return-check="${o.id}"]:checked`)]; if(!checks.length){ alert("請至少勾選一個退貨品項。"); return; } const returned=[]; checks.forEach(ch=>{ const idx=Number(ch.dataset.index); const item=o.items[idx]; const qtyInput=document.querySelector(`[data-return-qty="${o.id}"][data-index="${idx}"]`); const max=shippedQty(item)-returnedQty(o,item); const qty=Math.max(1,Math.min(Number(qtyInput.value||1),max)); returned.push({...item,qty}); if(!item.custom && state.stock[item.id]!==null) state.stock[item.id]+=qty; }); o.returns=o.returns||[]; o.returns.push(...returned); o.status="returned"; o.returnedAt=nowText(); const hasRemaining=o.items.some(item=>shippedQty(item)-returnedQty(o,item)>0); if(!hasRemaining) o.returnClosedAt=nowText(); saveState(); renderAdmin(); renderProducts(); renderReturns(); alert(`${o.id} 已完成退貨：${returned.map(i=>itemName(i)+" × "+i.qty).join("、")}，庫存已回補。`); }
       const noReturn=e.target.closest("[data-no-return]"); if(noReturn){ const o=state.orders.find(x=>x.id===noReturn.dataset.noReturn); o.returnClosedAt=nowText(); o.returnDecision="不退貨"; saveState(); renderAdmin(); renderReturns(); alert(`${o.id} 已從退貨清單移除。`); }
@@ -796,12 +806,14 @@
       if(refreshingCloud||(!force&&(cloudBusy||document.getElementById('receiptModal').classList.contains('show'))))return;
       refreshingCloud=true;
       try{const [nextProducts,nextOrders]=await Promise.all([FuyuanCloud.products('order'),FuyuanCloud.request('/staff/orders')]);const filter=document.getElementById('categoryFilter').value;PRODUCTS.splice(0,PRODUCTS.length,...nextProducts);state.stock=Object.fromEntries(PRODUCTS.map(p=>[p.id,p.stock]));state.categoryOverrides=Object.fromEntries(PRODUCTS.map(p=>[p.id,{storage:p.storage,type:p.type}]));state.orders=normalizeCloudOrders(nextOrders);for(const id of Object.keys(standardCart)){const p=PRODUCTS.find(p=>p.id===id&&p.orderVisible);if(!p)delete standardCart[id];else if(p.stock!==null)standardCart[id]=Math.min(standardCart[id],p.stock);}initFilters();if([...document.getElementById('categoryFilter').options].some(o=>o.value===filter))document.getElementById('categoryFilter').value=filter;
+        document.getElementById('orderSyncStatus').textContent='訂單更新於 '+new Date().toLocaleTimeString('zh-TW',{timeZone:'Asia/Taipei'});
         // Polling must not clear the return selections currently being entered.
         const returnDrafts=force?[]:[...document.querySelectorAll('#returnPage input')].map(input=>({order:input.dataset.returnCheck||input.dataset.returnQty,index:input.dataset.index,check:input.type==='checkbox',checked:input.checked,value:input.value}));
         renderProducts();renderShipping();renderReturns();
         for(const draft of returnDrafts){const input=document.querySelector(`[${draft.check?'data-return-check':'data-return-qty'}="${draft.order}"][data-index="${draft.index}"]`);if(input){if(draft.check)input.checked=draft.checked;else input.value=Math.max(1,Math.min(Number(draft.value)||1,Number(input.max)||1));}}
       }
       finally{refreshingCloud=false;}
+
     }
     function confirmCloud(message){
       return new Promise(resolve=>{const dialog=document.createElement('dialog');dialog.style.cssText='max-width:560px;width:90%;border:1px solid #cbd5e1;border-radius:14px;padding:26px;color:#1f2937;font:20px/1.7 sans-serif';const heading=document.createElement('h2');heading.textContent='確認訂單操作';const messageNode=document.createElement('p');messageNode.textContent=message;const cancel=document.createElement('button');cancel.textContent='返回';cancel.className='secondary';const ok=document.createElement('button');ok.textContent='確認';ok.className='primary';const actions=document.createElement('div');actions.className='actions';actions.append(cancel,ok);dialog.append(heading,messageNode,actions);document.body.append(dialog);let answer=false;cancel.onclick=()=>dialog.close();ok.onclick=()=>{answer=true;dialog.close();};dialog.onclose=()=>{dialog.remove();resolve(answer);};dialog.showModal();});
@@ -813,7 +825,7 @@
       cloudAction(async()=>{
         if(b.id==='saveOrder'){
           if(!pendingOrder?.items.length)throw Error('請至少選擇一個品項。');pendingOrder.cloudRequestId??=cloudRequestId||FuyuanCloud.random();cloudRequestId=pendingOrder.cloudRequestId;
-          const o=await FuyuanCloud.place({requestId:pendingOrder.cloudRequestId,channel:'order',name:pendingOrder.name,phone:'',note:pendingOrder.note,items:pendingOrder.items.map(i=>({id:i.id,name:i.custom?i.name:product(i.id).name,custom:!!i.custom,qty:i.qty,price:itemPrice(i)}))});cloudRequestId=null;clearCart();pendingOrder=null;closeModal('receiptModal');FuyuanCloud.notice('訂單 '+o.id+' 已送至共用後台。');return;
+          const o=await FuyuanCloud.place({requestId:pendingOrder.cloudRequestId,channel:'order',name:pendingOrder.name,phone:'',note:pendingOrder.note,items:pendingOrder.items.map(i=>({id:i.id,name:i.custom?i.name:product(i.id).name,custom:!!i.custom,qty:i.qty,price:itemPrice(i)}))});cloudRequestId=null;clearCart();pendingOrder=null;closeModal('receiptModal');FuyuanCloud.notice('訂單 '+orderLabel(o.id)+' 已送至共用後台。');return;
         }
         const id=b.dataset.ship||b.dataset.completeReturn||b.dataset.noReturn||b.dataset.deleteOrder,o=state.orders.find(o=>o.id===id);if(!o)throw Error('訂單已更新，請重新整理。');
         if(b.dataset.ship){const missing=o.items.filter(i=>!i.picked);if(missing.length&&!await confirmCloud(`本次有 ${missing.length} 項未勾選，不會出貨。確認完成出貨並釋放這些品項的預留庫存？`))return;await FuyuanCloud.request('/staff/orders/'+encodeURIComponent(id),'PATCH',{action:'ship',revision:o.revision,pickedIds:o.items.filter(i=>i.picked).map(i=>i.id)});FuyuanCloud.notice('已完成出貨；未出貨品項的預留庫存已釋放。');}
@@ -825,6 +837,9 @@
     document.addEventListener('change',e=>{const pick=e.target.closest('[data-pick]');if(!pick)return;e.stopImmediatePropagation();const id=pick.dataset.pick,itemId=pick.dataset.product,picked=pick.checked;cloudAction(async()=>{const o=state.orders.find(o=>o.id===id);await FuyuanCloud.request('/staff/orders/'+encodeURIComponent(id),'PATCH',{action:'pick',revision:o.revision,itemId,picked});});},true);
     setInterval(()=>{if(!document.hidden&&!document.activeElement?.matches('[data-qty]'))refreshCloud().catch(e=>FuyuanCloud.notice(e.message));},15000);
     document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshCloud().catch(e=>FuyuanCloud.notice(e.message));});
+
+    document.getElementById('refreshOrders').onclick=()=>refreshCloud(true).catch(e=>FuyuanCloud.notice('訂單更新失敗：'+e.message));
+    window.addEventListener('storage',e=>{if(e.key==='fuyuan-orders-updated')refreshCloud().catch(error=>FuyuanCloud.notice(error.message));});
     FuyuanCloud.notice('已連接共用資料庫，價格、庫存與訂單會自動同步。');
 
     initFilters(); renderProducts(); renderCustomList();

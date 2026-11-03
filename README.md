@@ -118,3 +118,5 @@ Docker 預設 `COOKIE_SECURE=true`，請透過正式 HTTPS 代理進入；本機
 - `data/catalog.json`：初始商品目錄；`data/sources.json`：來源版本。
 - `test/integration.test.js`：權限、上下架、庫存競爭、防重送、歷史單價、取消退貨、重啟持久性與分析測試。
 - `Dockerfile`：Node.js 24 容器部署。
+
+訂單卡片與近期訂單使用簡短單號（例如 FY-A12AB5B7），員工開單／顧客訂購以不同顏色標籤呈現。簡短單號僅供顯示與搜尋；資料及所有出退貨請求持續使用完整 ID，既有訂單不改號。

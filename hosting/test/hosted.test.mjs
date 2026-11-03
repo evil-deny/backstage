@@ -150,3 +150,13 @@ test('公開員工訂單保留自訂開單、揀貨、部分出貨、退貨及�
  for(const endpoint of ['/api/admin/products','/api/admin/orders','/api/admin/backup'])assert.equal((await request(endpoint,'GET',undefined,false,origin)).status,401);
  assert.equal((await request('/api/admin/products/'+p.id,'PATCH',{...p,price:1},false,origin)).status,401);
 });
+
+test('顧客送出的訂單出現在同一份員工待出貨清單並可揀貨出貨',async()=>{
+ const p=(await request('/api/products?channel=customer','GET',undefined,false)).data.find(p=>p.stock>=1&&p.price>0);
+ const submitted=await request('/api/orders','POST',{requestId:'customer-to-shipping',channel:'customer',name:'顧客同步驗證',phone:'0900000000',items:[{id:p.id,price:p.price,qty:1}]},false,'https://evil-deny.github.io');assert.equal(submitted.status,201);
+ const orders=(await request('/api/staff/orders','GET',undefined,false,'https://evil-deny.github.io')).data;
+ let order=orders.filter(o=>!o.archivedAt&&['new','picking'].includes(o.status)).find(o=>o.id===submitted.data.id);assert.ok(order);assert.equal(order.channel,'customer');assert.equal(order.items[0].price,p.price);
+ let result=await request('/api/staff/orders/'+order.id,'PATCH',{revision:order.revision,action:'pick',itemId:p.id,picked:true},false);assert.equal(result.status,200);order=result.data;
+ result=await request('/api/staff/orders/'+order.id,'PATCH',{revision:order.revision,action:'ship',pickedIds:[p.id]},false);assert.equal(result.status,200);order=result.data;assert.equal(order.status,'shipped');assert.equal(order.channel,'customer');
+ result=await request('/api/staff/orders/'+order.id,'PATCH',{revision:order.revision,action:'return',items:[{id:p.id,qty:1}]},false);assert.equal(result.status,200);assert.equal((await request('/api/admin/products')).data.find(x=>x.id===p.id).stock,p.stock);
+});
