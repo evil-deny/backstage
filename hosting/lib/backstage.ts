@@ -4,7 +4,7 @@ import {movedCatalog} from '../public/catalog-layout.js';
 import {isAdmin,allowedOrigin,corsHeaders,startGoogleLogin,googleLogin,revoke,digest,type AccessConfig} from './google-access';
 type Product={id:string;name:string;category:string;type:string;storage:string;image:string;price:number;orderPrice:number;orderUnit:string;customerUnit:string;stock:number|null;orderVisible:boolean;customerVisible:boolean;revision:number;displayNumber?:number|null;code?:string;deletedAt?:string;deletedCode?:string};
 type Item={id:string;name:string;price:number;qty:number;unit?:string;code?:string;market:boolean;returnedAt?:string;custom?:boolean;picked?:boolean};
-type Order={id:string;channel:string;name:string;phone:string;note:string;createdAt:string;status:string;items:Item[];returns:Item[];total:number;market:boolean;revision:number;shippedAt?:string;returnClosedAt?:string;archivedAt?:string;requestFingerprint?:string;submittedTotal?:number;submittedMarket?:boolean};
+type Order={id:string;channel:string;name:string;phone:string;note:string;createdAt:string;status:string;items:Item[];returns:Item[];total:number;market:boolean;revision:number;shippedAt?:string;returnClosedAt?:string;archivedAt?:string;deletedAt?:string;deletedArchivedAt?:string;requestFingerprint?:string;submittedTotal?:number;submittedMarket?:boolean};
 const fail=(status:number,message:string):never=>{throw Object.assign(new Error(message),{status});};
 const text=(v:unknown,max=200):string=>typeof v==='string'&&v.trim().length&&v.length<=max?v.trim():fail(400,'文字欄位未填或過長');
 const number=(v:unknown,max=1e8):number=>typeof v==='number'&&Number.isSafeInteger(v)&&v>=0&&v<=max?v:fail(400,'價格與數量必須是非負整數');
@@ -102,7 +102,11 @@ export async function handleBackstage(request:Request,db:D1Database,config:Acces
   if((path==='/api/admin/orders'||path==='/api/staff/orders')&&method==='GET')return reply(200,await repo.orders());
   if((path.startsWith('/api/admin/orders/')||path.startsWith('/api/staff/orders/'))&&method==='PATCH'){
    const o=await repo.order(decodeURIComponent(path.split('/').at(-1)!));if(b.revision!==o.revision)fail(409,'訂單已更新，請重新整理');let restock:Item[]=[];
-   if(b.action==='pick'&&['new','picking'].includes(o.status)){
+   if(['delete','restoreOrder'].includes(b.action)&&!admin)fail(403,'只有管理員可以刪除或還原訂單');
+   if(o.deletedAt&&b.action!=='restoreOrder')fail(409,'訂單已刪除，請先還原');
+   if(b.action==='delete'){const now=new Date().toISOString();o.deletedArchivedAt=o.archivedAt;o.deletedAt=now;o.archivedAt=now;if(['new','picking'].includes(o.status)){o.status='cancelled';restock=o.items;}}
+   else if(b.action==='restoreOrder'&&o.deletedAt){if(o.deletedArchivedAt)o.archivedAt=o.deletedArchivedAt;else delete o.archivedAt;delete o.deletedAt;delete o.deletedArchivedAt;}
+   else if(b.action==='pick'&&['new','picking'].includes(o.status)){
     const item=o.items.find(i=>i.id===b.itemId)??fail(400,'揀貨品項錯誤');if(typeof b.picked!=='boolean')fail(400,'揀貨品項錯誤');item.picked=b.picked;o.status=o.items.some(i=>i.picked)?'picking':'new';
    }else if(b.action==='ship'&&['new','picking'].includes(o.status)){
     if(b.pickedIds!==undefined&&(!Array.isArray(b.pickedIds)||b.pickedIds.some((id:any)=>typeof id!=='string'||!o.items.some(i=>i.id===id))))fail(400,'出貨品項錯誤');

@@ -74,7 +74,10 @@ export function createApp({dbPath=process.env.DB_PATH||join(ROOT,'data','backsta
    if(path==='/api/admin/orders'&&req.method==='GET')return reply(200,orders());
    if(path.startsWith('/api/admin/orders/')&&req.method==='PATCH')return reply(200,transaction(()=>{
     const o=order(decodeURIComponent(path.split('/').at(-1)));if(body.revision!==o.revision)fail(409,'訂單已更新，請重新整理');
-    if(body.action==='ship'&&o.status==='new'){o.status='shipped';o.shippedAt=new Date().toISOString();}
+    if(o.deletedAt&&body.action!=='restoreOrder')fail(409,'訂單已刪除，請先還原');
+    if(body.action==='delete'){const now=new Date().toISOString();o.deletedArchivedAt=o.archivedAt;o.deletedAt=now;o.archivedAt=now;if(['new','picking'].includes(o.status)){restock(o.items);o.status='cancelled';}}
+    else if(body.action==='restoreOrder'&&o.deletedAt){if(o.deletedArchivedAt)o.archivedAt=o.deletedArchivedAt;else delete o.archivedAt;delete o.deletedAt;delete o.deletedArchivedAt;}
+    else if(body.action==='ship'&&o.status==='new'){o.status='shipped';o.shippedAt=new Date().toISOString();}
     else if(body.action==='cancel'&&o.status==='new'){restock(o.items);o.status='cancelled';}
     else if(body.action==='return'&&['shipped','returned'].includes(o.status)){
      if(!Array.isArray(body.items)||!body.items.length)fail(400,'請選擇退貨商品');const ids=new Set();

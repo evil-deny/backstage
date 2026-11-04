@@ -17,6 +17,8 @@ const sql=new DatabaseSync(':memory:');
 for(const file of readdirSync('drizzle').filter(f=>f.endsWith('.sql')).sort())sql.exec(readFileSync('drizzle/'+file,'utf8'));
 function prepare(query,args=[]){return {bind(...values){return prepare(query,values);},async first(){return sql.prepare(query).get(...args)||null;},async all(){return {results:sql.prepare(query).all(...args)};},async run(){const r=sql.prepare(query).run(...args);return {meta:{changes:Number(r.changes)}};},_run(){const statement=sql.prepare(query);return statement.columns().length?{results:statement.all(...args)}:statement.run(...args);}};}
 const db={prepare,async batch(statements){sql.exec('BEGIN');try{const results=statements.map(s=>s._run());sql.exec('COMMIT');return results;}catch(e){sql.exec('ROLLBACK');throw e;}}};
+
+
 await db.prepare('INSERT INTO api_grants(hash,expires,provider,subject,email,audience) VALUES(?,?,?,?,?,?)').bind(await digest(adminToken),Date.now()+8*3600000,'google','test-owner','owner@example.test',config.GOOGLE_CLIENT_ID).run();
 async function request(path,method='GET',body,auth=true,origin){const headers={...(auth?{Authorization:'Bearer '+adminToken}:{}),...(body?{'Content-Type':'application/json'}:{}),...(origin?{Origin:origin}:{})};const r=await handleBackstage(new Request('https://site.example'+path,{method,headers,body:body?JSON.stringify(body):undefined}),db,config);return {status:r.status,data:r.status===204?null:await r.json(),headers:r.headers};}
 
@@ -251,4 +253,24 @@ test('商品編號為第一順位，使用數字順序且分組不打亂順序',
  const numbered=[{id:'p10',category:'甲'},{id:'p2',category:'乙'},{id:'p1',category:'甲'},{id:'p-legacy',category:'甲'}].sort(catalogOrder);
  assert.deepEqual(numbered.map(p=>p.id),['p1','p2','p10','p-legacy']);
  const groups=catalogGroups(numbered,p=>p.category);assert.equal(groups.length,3);assert.deepEqual(groups.flatMap(([,items])=>items).map(p=>p.id),['p1','p2','p10','p-legacy']);
+});
+
+test('管理員刪除與還原訂單：預留庫存只回補一次，歷史銷售保留，公開員工不能刪除',async()=>{
+ const p=(await request('/api/admin/products','POST',{name:'刪單庫存測試',category:'測試',type:'測試',storage:'乾貨',price:20,orderPrice:20,stock:10,orderVisible:true,customerVisible:true})).data;
+ const stock=async()=>(await request('/api/admin/products')).data.find(x=>x.id===p.id).stock;
+ const place=async key=>{const r=await request('/api/orders','POST',{requestId:key,channel:'customer',name:'刪單測試',phone:'0900000000',items:[{id:p.id,price:20,qty:2}]},false);assert.equal(r.status,201);return (await request('/api/admin/orders')).data.find(o=>o.id===r.data.id);};
+ const patch=(o,action,extra={})=>request('/api/admin/orders/'+o.id,'PATCH',{revision:o.revision,action,...extra});
+ let o=await place('delete-pending');assert.equal(await stock(),8);
+ for(const action of ['delete','restoreOrder'])assert.equal((await request('/api/staff/orders/'+o.id,'PATCH',{revision:o.revision,action},false)).status,403);
+ o=(await patch(o,'pick',{itemId:p.id,picked:true})).data;
+ const concurrent=await Promise.all([patch(o,'delete'),patch(o,'delete')]);assert.deepEqual(concurrent.map(r=>r.status).sort(),[200,409]);o=concurrent.find(r=>r.status===200).data;
+ assert.equal(o.status,'cancelled');assert.ok(o.deletedAt);assert.ok(o.archivedAt);assert.equal(await stock(),10);
+ assert.equal((await patch(o,'delete')).status,409);assert.equal((await patch(o,'ship')).status,409);assert.equal(await stock(),10);
+ assert.ok((await request('/api/admin/backup')).data.orders.find(x=>x.id===o.id).deletedAt);
+ o=(await patch(o,'restoreOrder')).data;assert.equal(o.deletedAt,undefined);assert.equal(o.archivedAt,undefined);assert.equal(o.status,'cancelled');assert.equal(await stock(),10);
+ o=await place('delete-shipped');o=(await patch(o,'ship')).data;o=(await patch(o,'return',{items:[{id:p.id,qty:1}]})).data;
+ o=(await patch(o,'archive')).data;const archived=o.archivedAt,before=analyze((await request('/api/admin/orders')).data);
+ o=(await patch(o,'delete')).data;assert.equal(await stock(),9);assert.equal(o.status,'returned');assert.equal(o.returns.length,1);
+ const after=analyze((await request('/api/admin/orders')).data);assert.equal(after.revenue,before.revenue);assert.equal(after.returned,before.returned);
+ o=(await patch(o,'restoreOrder')).data;assert.equal(o.archivedAt,archived);assert.equal(await stock(),9);
 });
