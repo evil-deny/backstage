@@ -252,7 +252,7 @@
       <button class="main-tab" data-main-view="returnPage">退貨</button>
     </div>
 
-    <div class="order-sync"><span id="orderSyncStatus" role="status">訂單每 15 秒同步</span><button class="secondary" id="refreshOrders">更新訂單 ↻</button></div>
+    <div class="order-sync"><span id="orderSyncStatus" role="status">訂單每 15 秒同步</span></div>
     <section class="main-view active" id="orderPage">
       <section class="search-row staff-catalog-nav" aria-label="選購商品">
         <div id="supplyTabs" class="supply-tabs" role="tablist" aria-label="商品來源"></div>
@@ -299,7 +299,7 @@
     let activeSupply='company';
     const supplyKey=p=>p.category==='公司庫存'?'company':String(p.category||'').startsWith('兩天一次')?'two-day':p.category||'other';
     const staffFilterLabel=p=>productStorage(p)+' / '+productType(p);
-    const CLOUD_ORDERS=await FuyuanCloud.request('/staff/orders').catch(e=>{FuyuanCloud.notice('訂單尚未同步，請按「更新訂單」重試。');return [];});
+    const CLOUD_ORDERS=await FuyuanCloud.request('/staff/orders').catch(e=>{FuyuanCloud.notice('訂單暫時無法同步，系統稍後會自動重試。');return [];});
     // Authentication is enforced by the shared API, not by a browser password.
     const STORE_KEY = "clearOrderSystemV3";
     const PLACEHOLDER = "https://evil-deny.github.io/order/assets/logo.jpg";
@@ -856,7 +856,7 @@
     setInterval(()=>{if(!document.hidden&&!document.activeElement?.matches('[data-qty]'))refreshCloud().catch(e=>FuyuanCloud.notice(e.message));},15000);
     document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshCloud().catch(e=>FuyuanCloud.notice(e.message));});
 
-    document.getElementById('refreshOrders').onclick=()=>refreshCloud(true).catch(e=>FuyuanCloud.notice('訂單更新失敗：'+e.message));
+
     window.addEventListener('storage',e=>{if(e.key==='fuyuan-orders-updated')refreshCloud().catch(error=>FuyuanCloud.notice(error.message));});
     FuyuanCloud.notice('已連接共用資料庫，價格、庫存與訂單會自動同步。');
 
