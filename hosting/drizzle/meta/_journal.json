@@ -36,6 +36,20 @@
       "when": 1793781432476,
       "tag": "0004_chunky_xavin",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1793823196554,
+      "tag": "0005_sloppy_bloodstrike",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1793823255619,
+      "tag": "0006_graceful_baron_strucker",
+      "breakpoints": true
     }
   ]
 }

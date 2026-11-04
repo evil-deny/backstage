@@ -1,3 +1,4 @@
+import {initBilling} from './billing-ui.js';
 import {orderLabel,sourceLabel,sourceClass} from './order-display.js';
 import {analyze} from './metrics.js';
 import {catalogOrder} from './catalog-order.js';
@@ -15,7 +16,7 @@ async function api(path,method='GET',body){try{return await FuyuanCloud.request(
 function toast(message){$('toast').textContent=message;$('toast').classList.add('show');clearTimeout(toast.timer);toast.timer=setTimeout(()=>$('toast').classList.remove('show'),6000);}
 function showLogin(){$('workspace').hidden=true;$('login').hidden=false;if(!googleLoginMounted){googleLoginMounted=true;$('googleLoginError').textContent='';$('retryGoogleLogin').hidden=true;FuyuanCloud.mountGoogle($('googleSignIn'),async()=>{googleLoginMounted=false;await refresh();},googleLoginError).catch(googleLoginError);}}
 function googleLoginError(e){googleLoginMounted=false;$('googleLoginError').textContent=e.message;$('retryGoogleLogin').hidden=false;}
-async function refresh(){const result=await Promise.all([api('admin/catalog'),api('admin/orders')]);const catalog=result[0];orders=result[1];products=catalog.products;deletedProducts=catalog.deletedProducts;catalogRevision=catalog.revision;for(const id of selectedProducts)if(!products.some(p=>p.id===id))selectedProducts.delete(id);products.sort(catalogOrder);$('workspace').hidden=false;$('login').hidden=true;render();$('updatedAt').textContent='更新於 '+new Date().toLocaleTimeString('zh-TW',{timeZone:'Asia/Taipei'});}
+async function refresh(){const result=await Promise.all([api('admin/catalog'),api('admin/orders'),api('admin/billing')]);const catalog=result[0];orders=result[1];products=catalog.products;deletedProducts=catalog.deletedProducts;catalogRevision=catalog.revision;for(const id of selectedProducts)if(!products.some(p=>p.id===id))selectedProducts.delete(id);products.sort(catalogOrder);$('workspace').hidden=false;$('login').hidden=true;render();billing.update(result[2]);$('updatedAt').textContent='更新於 '+new Date().toLocaleTimeString('zh-TW',{timeZone:'Asia/Taipei'});}
 const metric=(title,value,sub)=>`<article class="metric"><p>${title}</p><strong>${value}</strong><small>${sub}</small></article>`;
 const empty='<p class="empty">目前沒有符合的資料</p>';
 function orderTable(list){return `<table><thead><tr><th>顧客 / 訂單</th><th>來源</th><th>金額</th><th>狀態</th></tr></thead><tbody>${list.map(o=>`<tr><td><strong>${esc(o.name)}</strong><small>單號 ${esc(orderLabel(o.id))}</small></td><td><span class="order-source ${sourceClass(o.channel)}">${sourceLabel(o.channel)}</span></td><td>${money(o.total)}${o.market?'＋時價':''}</td><td><span class="badge ${['new','picking'].includes(o.status)?'amber':''}">${status[o.status]}</span></td></tr>`).join('')}</tbody></table>`;}
@@ -65,7 +66,8 @@ function download(name,data,type='application/json'){const a=document.createElem
 function csv(name,rows){const cell=v=>'"'+String(typeof v==='string'&&/^[=+\-@\t\r]/.test(v)?"'"+v:v??'').replaceAll('"','""')+'"';download(name,'\ufeff'+rows.map(r=>r.map(cell).join(',')).join('\r\n'),'text/csv;charset=utf-8');}
 async function run(fn){try{await fn();}catch(e){toast(e.message);}}
 $('refresh').onclick=()=>run(refresh);$('logout').onclick=()=>run(async()=>{await FuyuanCloud.signOut();products=[];orders=[];showLogin();});
-const views={overview:['營運總覽','從每一份訂單，看見生意的變化。'],products:['商品管理','一份商品目錄，同步管理兩個訂購入口。'],orders:['訂單管理','從接單、出貨到退貨，掌握每一筆進度。'],analytics:['商品分析','把銷售紀錄，變成下一次備貨的依據。']};
+const billing=initBilling({api,ask,toast,getOrders:()=>orders,getProducts:()=>[...products,...deletedProducts],refresh,run,csv});
+const views={billing:['批發結帳','每日批發貨款、時價品項與租金，一張單清楚結帳。'],refunds:['退貨抵扣','查看退貨金額與下次結帳可抵扣的餘額。'],overview:['營運總覽','從每一份訂單，看見生意的變化。'],products:['商品管理','一份商品目錄，同步管理兩個訂購入口。'],orders:['訂單管理','從接單、出貨到退貨，掌握每一筆進度。'],analytics:['商品分析','把銷售紀錄，變成下一次備貨的依據。']};
 document.addEventListener('click',e=>run(async()=>{const b=e.target.closest('button');if(!b)return;if(b.dataset.view){view=b.dataset.view;for(const key of Object.keys(views))$(key+'View').hidden=key!==view;document.querySelectorAll('nav button').forEach(el=>el.classList.toggle('active',el.dataset.view===view));[$('pageTitle').textContent,$('pageDescription').textContent]=views[view];}
  if(b.dataset.image){const p=[...products,...deletedProducts].find(p=>p.id===b.dataset.image);$('imageDialogTitle').textContent=p.name;$('productImagePreview').src=p.image||PRODUCT_FALLBACK;$('productImagePreview').alt=p.name;$('imageDialog').showModal();}
  if(b.dataset.close)$(b.dataset.close).close();if(b.dataset.edit)edit(products.find(p=>p.id===b.dataset.edit));

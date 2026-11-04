@@ -1,9 +1,10 @@
 import catalog from '../data/catalog.json';
+import {billingData,billingAction} from './billing';
 import {catalogOrder} from '../public/catalog-order.js';
 import {movedCatalog} from '../public/catalog-layout.js';
 import {isAdmin,allowedOrigin,corsHeaders,startGoogleLogin,googleLogin,revoke,digest,type AccessConfig} from './google-access';
 type Product={id:string;name:string;category:string;type:string;storage:string;image:string;price:number;orderPrice:number;orderUnit:string;customerUnit:string;stock:number|null;orderVisible:boolean;customerVisible:boolean;revision:number;displayNumber?:number|null;code?:string;deletedAt?:string;deletedCode?:string};
-type Item={id:string;name:string;price:number;qty:number;unit?:string;code?:string;market:boolean;returnedAt?:string;custom?:boolean;picked?:boolean};
+type Item={id:string;name:string;price:number;qty:number;unit?:string;code?:string;category?:string;market:boolean;returnedAt?:string;custom?:boolean;picked?:boolean};
 type Order={id:string;channel:string;name:string;phone:string;note:string;createdAt:string;status:string;items:Item[];returns:Item[];total:number;market:boolean;revision:number;shippedAt?:string;returnClosedAt?:string;archivedAt?:string;deletedAt?:string;deletedArchivedAt?:string;requestFingerprint?:string;submittedTotal?:number;submittedMarket?:boolean};
 const fail=(status:number,message:string):never=>{throw Object.assign(new Error(message),{status});};
 const text=(v:unknown,max=200):string=>typeof v==='string'&&v.trim().length&&v.length<=max?v.trim():fail(400,'文字欄位未填或過長');
@@ -71,6 +72,7 @@ export async function handleBackstage(request:Request,db:D1Database,config:Acces
   if(path==='/api/logout'&&method==='POST'){await revoke(request,db);return reply(200,{ok:true});}
   if(path==='/api/products'&&method==='GET'){const key=url.searchParams.get('channel')==='order'?'orderVisible':'customerVisible';return reply(200,(await repo.products()).filter(p=>p[key]).map(({orderPrice,orderUnit,customerUnit,...p})=>({...p,price:key==='orderVisible'?orderPrice:p.price,unit:key==='orderVisible'?orderUnit:customerUnit})));}
   if(path==='/api/admin/catalog'&&method==='GET')return reply(200,await repo.layout());
+  if(path==='/api/admin/billing'||path==='/api/admin/billing/paid'||path==='/api/admin/billing/manual-return')return reply(200,await billingAction(db,path,method,b,await repo.orders(),await repo.products(true)));
   if(path.startsWith('/api/admin/catalog/')&&method==='POST'){
    const current=await repo.layout();if(b.revision!==current.revision)fail(409,'商品目錄已更新，請重新整理');
    if(path==='/api/admin/catalog/reorder'){
@@ -95,7 +97,7 @@ export async function handleBackstage(request:Request,db:D1Database,config:Acces
    const result=(o:Order)=>{if(o.requestFingerprint&&o.requestFingerprint!==requestFingerprint)fail(409,'這份訂單已送出；修改內容請開始另一張訂購單');return {id:o.id,total:o.submittedTotal??o.total,market:o.submittedMarket??o.market};};const existing=await repo.findRequest(requestId);if(existing)return reply(201,result(existing));
    const name=text(b.name,60),phone=typeof b.phone==='string'?b.phone.trim().slice(0,40):'';
    if(channel==='customer'&&!/^[\d+()\s-]{6,40}$/.test(phone))fail(400,'請填寫有效聯絡電話');if(!Array.isArray(b.items)||!b.items.length||b.items.length>300)fail(400,'請選擇 1 至 300 項商品');
-   const ids=new Set<string>(),items:Item[]=[];for(const i of b.items){if(!i||typeof i!=='object')fail(400,'商品格式錯誤');if(i.custom){if(channel!=='order')fail(403,'顧客不能建立自訂價格品項');const qty=number(i.qty,9999);if(!qty||ids.has(i.id))fail(400,'自訂商品重複或數量為零');ids.add(i.id);items.push({id:text(i.id,80),name:text(i.name,120),price:number(i.price),market:i.price===0,qty,unit:text(i.unit??'件',20),custom:true,picked:false});continue;}const p=await repo.product(text(i.id,80)),qty=number(i.qty,9999);if(p.deletedAt)fail(409,`${p.name} 已刪除，請更新商品`);if(!qty||ids.has(p.id))fail(400,'商品重複或數量為零');ids.add(p.id);if(!p[channel==='order'?'orderVisible':'customerVisible'])fail(409,`${p.name} 已隱藏`);const unit=channel==='order'?p.orderUnit:p.customerUnit;if(i.unit!==undefined&&i.unit!==unit)fail(409,`${p.name} 販售單位已調整，請更新商品`);const price=channel==='order'?p.orderPrice:p.price;if(i.price!==price)fail(409,`${p.name} 價格已調整，請更新商品`);if(p.stock!==null&&p.stock<qty)fail(409,`${p.name} 庫存不足`);items.push({id:p.id,name:p.name,code:p.code,price,unit,market:price===0,qty,custom:false,picked:false});}
+   const ids=new Set<string>(),items:Item[]=[];for(const i of b.items){if(!i||typeof i!=='object')fail(400,'商品格式錯誤');if(i.custom){if(channel!=='order')fail(403,'顧客不能建立自訂價格品項');const qty=number(i.qty,9999);if(!qty||ids.has(i.id))fail(400,'自訂商品重複或數量為零');ids.add(i.id);items.push({id:text(i.id,80),name:text(i.name,120),price:number(i.price),market:i.price===0,qty,unit:text(i.unit??'件',20),custom:true,picked:false});continue;}const p=await repo.product(text(i.id,80)),qty=number(i.qty,9999);if(p.deletedAt)fail(409,`${p.name} 已刪除，請更新商品`);if(!qty||ids.has(p.id))fail(400,'商品重複或數量為零');ids.add(p.id);if(!p[channel==='order'?'orderVisible':'customerVisible'])fail(409,`${p.name} 已隱藏`);const unit=channel==='order'?p.orderUnit:p.customerUnit;if(i.unit!==undefined&&i.unit!==unit)fail(409,`${p.name} 販售單位已調整，請更新商品`);const price=channel==='order'?p.orderPrice:p.price;if(i.price!==price)fail(409,`${p.name} 價格已調整，請更新商品`);if(p.stock!==null&&p.stock<qty)fail(409,`${p.name} 庫存不足`);items.push({id:p.id,name:p.name,code:p.code,category:p.category,price,unit,market:price===0,qty,custom:false,picked:false});}
    const o:Order={id:'FY-'+crypto.randomUUID(),channel,name,phone,note:typeof b.note==='string'?b.note.slice(0,500):'',createdAt:new Date().toISOString(),status:'new',items,returns:[],total:items.reduce((s,i)=>s+i.price*i.qty,0),market:items.some(i=>i.market),revision:1,requestFingerprint,submittedTotal:items.reduce((s,i)=>s+i.price*i.qty,0),submittedMarket:items.some(i=>i.market)};
    try{await repo.place(o,requestId);}catch(e){const previous=await repo.findRequest(requestId);if(previous)return reply(201,result(previous));if(String(e).includes('CHECK constraint')||String(e).includes('UNIQUE constraint'))fail(409,'價格、單位、上下架或庫存已變更，請更新商品後重試');throw e;}return reply(201,result(o));
   }
@@ -120,7 +122,7 @@ export async function handleBackstage(request:Request,db:D1Database,config:Acces
     if(o.items.filter(i=>i.picked!==false).every(i=>o.returns.filter(r=>r.id===i.id).reduce((sum,r)=>sum+r.qty,0)>=i.qty))o.returnClosedAt=new Date().toISOString();
    }else fail(400,'此訂單狀態不允許這項操作');return reply(200,await repo.transition(o,b.revision,restock));
   }
-  if(path==='/api/admin/backup'&&method==='GET')return reply(200,{schema:1,exportedAt:new Date().toISOString(),products:await repo.products(true),orders:await repo.orders()},{'Content-Disposition':'attachment; filename="backstage-backup.json"'});
+  if(path==='/api/admin/backup'&&method==='GET')return reply(200,{schema:1,exportedAt:new Date().toISOString(),products:await repo.products(true),orders:await repo.orders(),billing:await billingData(db)},{'Content-Disposition':'attachment; filename="backstage-backup.json"'});
   fail(404,'找不到 API');
  }catch(e:any){if(!e.status)console.error(e);return reply(e.status||500,{error:e.status?e.message:'伺服器發生錯誤，請稍後再試'});}
 }
