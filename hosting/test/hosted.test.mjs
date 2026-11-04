@@ -7,6 +7,7 @@ import {generateKeyPair,exportJWK,SignJWT} from 'jose';
 mkdirSync('.sites-runtime/test',{recursive:true});
 await build({entryPoints:['lib/backstage.ts'],bundle:true,platform:'node',format:'esm',outfile:'.sites-runtime/test/backstage.mjs'});
 const {handleBackstage}=await import('../.sites-runtime/test/backstage.mjs');
+const {analyze}=await import('../public/metrics.js');
 await build({entryPoints:['lib/google-access.ts'],bundle:true,platform:'node',format:'esm',outfile:'.sites-runtime/test/access.mjs'});
 const {pkce,digest}=await import('../.sites-runtime/test/access.mjs');
 const config={ADMIN_EMAILS:'owner@example.test',GOOGLE_CLIENT_ID:'test-client.apps.googleusercontent.com'};
@@ -17,6 +18,35 @@ function prepare(query,args=[]){return {bind(...values){return prepare(query,val
 const db={prepare,async batch(statements){sql.exec('BEGIN');try{const results=statements.map(s=>s._run());sql.exec('COMMIT');return results;}catch(e){sql.exec('ROLLBACK');throw e;}}};
 await db.prepare('INSERT INTO api_grants(hash,expires,provider,subject,email,audience) VALUES(?,?,?,?,?,?)').bind(await digest(adminToken),Date.now()+8*3600000,'google','test-owner','owner@example.test',config.GOOGLE_CLIENT_ID).run();
 async function request(path,method='GET',body,auth=true,origin){const headers={...(auth?{Authorization:'Bearer '+adminToken}:{}),...(body?{'Content-Type':'application/json'}:{}),...(origin?{Origin:origin}:{})};const r=await handleBackstage(new Request('https://site.example'+path,{method,headers,body:body?JSON.stringify(body):undefined}),db,config);return {status:r.status,data:r.status===204?null:await r.json(),headers:r.headers};}
+
+test('批發與顧客單位獨立同步、歷史快照、退貨與分析保持原單位',async()=>{
+ const legacy=(await request('/api/products')).data[0];assert.equal(legacy.unit,'件');
+ let p=(await request('/api/admin/products','POST',{name:'雙單位測試',category:'測試',type:'豆製品',storage:'冷藏',image:'',price:60,orderPrice:600,orderUnit:'箱',customerUnit:'包',stock:null,orderVisible:true,customerVisible:true})).data;
+ for(const [channel,unit,price] of [['order','箱',600],['customer','包',60]]){
+  const pub=(await request('/api/products?channel='+channel)).data.find(x=>x.id===p.id);assert.equal(pub.unit,unit);assert.equal(pub.price,price);assert.equal('orderUnit' in pub,false);assert.equal('customerUnit' in pub,false);
+ }
+ const payload=(channel,unit)=>({requestId:'units-'+channel,channel,name:'單位測試',phone:'0900000000',items:[{id:p.id,qty:2,price:channel==='order'?600:60,unit}]});
+ assert.equal((await request('/api/orders','POST',payload('order','包'),false)).status,409);
+ const a=await request('/api/orders','POST',payload('order','箱'),false),b=await request('/api/orders','POST',payload('customer','包'),false);assert.equal(a.status,201);assert.equal(b.status,201);
+ p=(await request('/api/admin/products')).data.find(x=>x.id===p.id);p=(await request('/api/admin/products/'+p.id,'PATCH',{...p,orderUnit:'盒',customerUnit:'袋'})).data;
+ assert.equal(p.orderUnit,'盒');assert.equal(p.customerUnit,'袋');
+ // Old callers that only update visibility must preserve both saved units.
+ const {orderUnit,customerUnit,...withoutUnits}=p;p=(await request('/api/admin/products/'+p.id,'PATCH',{...withoutUnits,customerVisible:false})).data;assert.equal(p.orderUnit,'盒');assert.equal(p.customerUnit,'袋');
+ for(const unit of ['', 'a'.repeat(21),12])assert.equal((await request('/api/admin/products/'+p.id,'PATCH',{...p,orderUnit:unit})).status,400);
+ assert.equal((await request('/api/orders','POST',{...payload('order','箱'),requestId:'units-stale'},false)).status,409);
+ // A concurrent unit edit after validation is also rejected by the atomic reservation.
+ const repo=(await import('../.sites-runtime/test/backstage.mjs')).createRepository(db);
+ await assert.rejects(repo.place({id:'unit-race',channel:'order',items:[{id:p.id,qty:1,price:600,unit:'箱'}]},'unit-race'));assert.equal(await repo.findRequest('unit-race'),null);
+ const orders=[];
+ for(const [result,unit] of [[a,'箱'],[b,'包']]){
+  let o=(await request('/api/staff/orders', 'GET',undefined,false)).data.find(o=>o.id===result.data.id);assert.equal(o.items[0].unit,unit);
+  o=(await request('/api/staff/orders/'+o.id,'PATCH',{revision:o.revision,action:'ship'},false)).data;
+  o=(await request('/api/staff/orders/'+o.id,'PATCH',{revision:o.revision,action:'return',items:[{id:p.id,qty:1}]},false)).data;assert.equal(o.returns[0].unit,unit);orders.push(o);
+ }
+ const metrics=analyze(orders);assert.equal(metrics.rows.length,2);assert.deepEqual(metrics.rows.map(r=>r.unit).sort(),['包','箱']);assert.equal(metrics.revenue,660);assert.ok(metrics.rows.every(r=>r.net===1));
+ // Keep independent pre-existing tests' shared fixture unchanged.
+ sql.prepare('DELETE FROM order_records WHERE id IN (?,?)').run(a.data.id,b.data.id);sql.prepare('DELETE FROM inventory WHERE id=?').run(p.id);
+});
 test('D1 版身份驗證、商品同步、批次庫存與歷史單價',async()=>{
  assert.equal((await request('/api/admin/products','GET',undefined,false)).status,401);
  assert.equal((await request('/api/staff')).data.admin,true);

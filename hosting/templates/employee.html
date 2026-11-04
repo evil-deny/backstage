@@ -230,7 +230,7 @@
 </head>
 <body>
   <header class="topbar">
-    <div class="brand"><img src="assets/logo.jpg" alt="福緣素食 logo"><div><strong>福緣訂單系統</strong><span>輸入大名，選品項，確認後送出</span></div></div>
+    <div class="brand"><img src="/logo.jpg" alt="福緣素食 logo"><div><strong>福緣訂單系統</strong><span>輸入大名，選品項，確認後送出</span></div></div>
     <button class="admin-open" id="openAdmin" hidden>後台</button>
   </header>
 
@@ -281,6 +281,7 @@
   <script type="module">
     import {orderLabel,sourceLabel,sourceClass} from "/order-display.js";
     await FuyuanCloud.ready;
+    document.addEventListener("keydown",e=>{if(e.target.matches("[data-image-open]")&&["Enter"," "].includes(e.key)){e.preventDefault();e.target.click();}});
     const PRODUCTS=await FuyuanCloud.loadProducts('order');
     const CLOUD_ORDERS=await FuyuanCloud.request('/staff/orders').catch(e=>{FuyuanCloud.notice('訂單尚未同步，請按「更新訂單」重試。');return [];});
     // Authentication is enforced by the shared API, not by a browser password.
@@ -317,12 +318,13 @@
     }
     function itemName(item){ return attrText(item.name || product(item.id).name); }
     function itemPrice(item){ return Number.isFinite(item.price) ? item.price : product(item.id).price; }
+    function itemUnit(item){ return attrText(item.unit??"件"); }
     function itemSubtotal(item){ return itemPrice(item) * item.qty; }
     function openModal(id){ document.getElementById(id).classList.add("show"); }
     function closeModal(id){ document.getElementById(id).classList.remove("show"); }
 
     function cartItems(){
-      const standard = activeProducts().map(p => ({id:p.id, qty:Number(standardCart[p.id] || 0), custom:false})).filter(i => i.qty > 0);
+      const standard = activeProducts().map(p => ({id:p.id,name:p.name,price:p.price,unit:p.unit??"件",qty:Number(standardCart[p.id] || 0),custom:false})).filter(i => i.qty > 0);
       return [...standard, ...customCart.map(i => ({...i}))];
     }
     function orderTotal(order){ return order.items.reduce((sum,i)=>sum+itemSubtotal(i),0); }
@@ -446,7 +448,7 @@
       visibleProducts().forEach(p=>{ const label=productGroupLabel(p); if(!grouped.has(label)) grouped.set(label,[]); grouped.get(label).push(p); });
       document.getElementById("productList").innerHTML=[...grouped.entries()].map(([category,items])=>`
         <section class="category"><div class="category-title"><span>${category}</span><span class="category-count">${items.length} 項</span></div><div class="items">
-        ${items.map(p=>`<article class="item ${standardCart[p.id]?'selected':''}"><div class="item-media"><img src="${attrText(p.image||PLACEHOLDER)}" alt="${attrText(p.name)}" loading="lazy" data-image-open="${attrText(p.image||PLACEHOLDER)}" data-image-name="${attrText(p.name)}" onerror="this.src='${PLACEHOLDER}'">${state.stock[p.id]===null?"":`<span class="stock">庫存 ${state.stock[p.id]}</span>`}</div><div class="item-heading"><div class="item-name">${productNameMarkup(p.name)}</div><div class="item-price"><span>員工價</span><strong>${p.price===0?"時價":money(p.price)}</strong></div></div><div class="qty"><button type="button" data-minus="${p.id}" aria-label="減少 ${attrText(p.name)} 數量">−</button><input id="qty-${p.id}" type="number" min="0" value="${standardCart[p.id] || 0}" inputmode="numeric" data-qty="${p.id}" aria-label="${attrText(p.name)} 數量"><button type="button" data-plus="${p.id}" aria-label="增加 ${attrText(p.name)} 數量">＋</button></div></article>`).join("")}
+        ${items.map(p=>`<article class="item ${standardCart[p.id]?'selected':''}"><div class="item-media"><img src="${attrText(p.image||PLACEHOLDER)}" alt="${attrText(p.name)}" loading="lazy" data-image-open="${attrText(p.image||PLACEHOLDER)}" data-image-name="${attrText(p.name)}" tabindex="0" role="button" aria-label="放大 ${attrText(p.name)} 商品圖片" onerror="this.src='${PLACEHOLDER}'">${state.stock[p.id]===null?"":`<span class="stock">庫存 ${state.stock[p.id]}</span>`}</div><div class="item-heading"><div class="item-name">${productNameMarkup(p.name)}</div><div class="item-price"><span>批發價</span><strong>${p.price===0?"時價":money(p.price)}<small>／${attrText(p.unit??"件")}</small></strong></div></div><div class="qty"><button type="button" data-minus="${p.id}" aria-label="減少 ${attrText(p.name)} 數量">−</button><input id="qty-${p.id}" type="number" min="0" value="${standardCart[p.id] || 0}" inputmode="numeric" data-qty="${p.id}" aria-label="${attrText(p.name)} 數量"><button type="button" data-plus="${p.id}" aria-label="增加 ${attrText(p.name)} 數量">＋</button></div></article>`).join("")}
         </div></section>`).join("") || `<div class="empty">找不到品項。</div>`;
       updateTotal();
     }
@@ -487,7 +489,7 @@
             </div>
             <table class="receipt-table">
               <thead><tr><th>商品</th><th>單價</th><th>數量</th><th>小計</th></tr></thead>
-              <tbody>${pendingOrder.items.map((item,index)=>`<tr><td><strong>${itemName(item)}</strong><div class="receipt-edit"><button data-receipt-dec="${index}">−</button><button data-receipt-inc="${index}">＋</button><button class="remove" data-receipt-remove="${index}">刪除</button></div></td><td>${money(itemPrice(item))}</td><td>${item.qty}</td><td>${money(itemSubtotal(item))}</td></tr>`).join("") || `<tr><td colspan="4">訂單已沒有品項。</td></tr>`}</tbody>
+              <tbody>${pendingOrder.items.map((item,index)=>`<tr><td><strong>${itemName(item)}</strong><div class="receipt-edit"><button data-receipt-dec="${index}">−</button><button data-receipt-inc="${index}">＋</button><button class="remove" data-receipt-remove="${index}">刪除</button></div></td><td>${money(itemPrice(item))}</td><td>${item.qty} ${itemUnit(item)}</td><td>${money(itemSubtotal(item))}</td></tr>`).join("") || `<tr><td colspan="4">訂單已沒有品項。</td></tr>`}</tbody>
             </table>
             <div class="receipt-total-row"><span>總金額</span><strong>${money(total)}</strong></div>
           </div>
@@ -499,7 +501,7 @@
           ${pendingOrder.note?`<p><strong>備註：</strong>${pendingOrder.note}</p>`:""}
           <table class="print-table">
             <thead><tr><th>商品</th><th>單價</th><th>數量</th><th>總額</th></tr></thead>
-            <tbody>${pendingOrder.items.map(item=>`<tr><td>${itemName(item)}</td><td>${money(itemPrice(item))}</td><td>${item.qty}</td><td>${money(itemSubtotal(item))}</td></tr>`).join("")}</tbody>
+            <tbody>${pendingOrder.items.map(item=>`<tr><td>${itemName(item)}</td><td>${money(itemPrice(item))}</td><td>${item.qty} ${itemUnit(item)}</td><td>${money(itemSubtotal(item))}</td></tr>`).join("")}</tbody>
           </table>
           <div class="print-total">總金額：${money(total)}</div>
         </div>`;
@@ -525,7 +527,7 @@
       const rows=pendingOrder.items.map(item=>({
         name:itemName(item),
         price:money(itemPrice(item)),
-        qty:String(item.qty),
+        qty:String(item.qty)+" "+(item.unit??"件"),
         subtotal:money(itemSubtotal(item))
       }));
       const total=pendingOrder.items.reduce((sum,i)=>sum+itemSubtotal(i),0);
@@ -656,11 +658,11 @@
     }
     function orderCard(order){
       const shipped=order.status==="shipped"||order.status==="returned";
-      return `<div class="order-card"><div class="order-title"><span>${attrText(order.name)} <span class="short-order" title="${attrText(order.id)}">${attrText(orderLabel(order.id))}</span> <span class="order-source ${sourceClass(order.channel)}">${sourceLabel(order.channel)}</span></span><span class="badge ${order.status}">${statusText(order.status)}</span></div><div class="meta">送單 ${order.createdAt || "-"}${order.shippedAt?` · 出貨 ${order.shippedAt}`:""}${order.returnedAt?` · 退貨 ${order.returnedAt}`:""}</div><div class="receipt-list">${order.items.map(i=>`<div class="line"><span>${itemName(i)} · 單價 ${money(itemPrice(i))} × ${i.qty}${shipped?`<br><small>${i.picked?"已出貨":"未出貨/缺貨"}</small>`:""}</span><strong>${money(shipped?shippedSubtotal(i):itemSubtotal(i))}</strong></div>`).join("")}</div><div><strong>總計：</strong>${money(orderNet(order))}${order.note?` ｜備註：${attrText(order.note)}`:""}</div><div class="actions"><button class="danger" data-delete-order="${order.id}">取消／封存這筆明細</button></div></div>`;
+      return `<div class="order-card"><div class="order-title"><span>${attrText(order.name)} <span class="short-order" title="${attrText(order.id)}">${attrText(orderLabel(order.id))}</span> <span class="order-source ${sourceClass(order.channel)}">${sourceLabel(order.channel)}</span></span><span class="badge ${order.status}">${statusText(order.status)}</span></div><div class="meta">送單 ${order.createdAt || "-"}${order.shippedAt?` · 出貨 ${order.shippedAt}`:""}${order.returnedAt?` · 退貨 ${order.returnedAt}`:""}</div><div class="receipt-list">${order.items.map(i=>`<div class="line"><span>${itemName(i)} · 單價 ${money(itemPrice(i))} × ${i.qty} ${itemUnit(i)}${shipped?`<br><small>${i.picked?"已出貨":"未出貨/缺貨"}</small>`:""}</span><strong>${money(shipped?shippedSubtotal(i):itemSubtotal(i))}</strong></div>`).join("")}</div><div><strong>總計：</strong>${money(orderNet(order))}${order.note?` ｜備註：${attrText(order.note)}`:""}</div><div class="actions"><button class="danger" data-delete-order="${order.id}">取消／封存這筆明細</button></div></div>`;
     }
     function renderShipping(){
       const orders=state.orders.filter(o=>o.status==="new"||o.status==="picking");
-      document.getElementById("shipPage").innerHTML=`<section class="category"><div class="category-title"><span>出貨劃記</span><span class="category-count">${orders.length} 張</span></div><div style="padding:10px"><div class="empty">送單時會先預留庫存；只勾實際出貨的品項，未勾的品項會釋放預留庫存，並且不計入銷售額。</div>${orders.map(o=>`<div class="order-card"><div class="order-title"><span>${attrText(o.name)} <span class="short-order" title="${attrText(o.id)}">${attrText(orderLabel(o.id))}</span> <span class="order-source ${sourceClass(o.channel)}">${sourceLabel(o.channel)}</span></span><span class="badge">${statusText(o.status)}</span></div><div class="meta">送單 ${o.createdAt || "-"}</div><div class="pick-list">${o.items.map(i=>`<label class="check"><input type="checkbox" data-pick="${o.id}" data-product="${i.id}" ${i.picked?"checked":""}><span>${itemName(i)} · 單價 ${money(itemPrice(i))}</span><strong>× ${i.qty}</strong></label>`).join("")}</div><div class="actions"><button class="primary" data-ship="${o.id}">完成出貨</button></div></div>`).join("")||`<div class="empty">沒有待出貨訂單。</div>`}</div></section>`;
+      document.getElementById("shipPage").innerHTML=`<section class="category"><div class="category-title"><span>出貨劃記</span><span class="category-count">${orders.length} 張</span></div><div style="padding:10px"><div class="empty">送單時會先預留庫存；只勾實際出貨的品項，未勾的品項會釋放預留庫存，並且不計入銷售額。</div>${orders.map(o=>`<div class="order-card"><div class="order-title"><span>${attrText(o.name)} <span class="short-order" title="${attrText(o.id)}">${attrText(orderLabel(o.id))}</span> <span class="order-source ${sourceClass(o.channel)}">${sourceLabel(o.channel)}</span></span><span class="badge">${statusText(o.status)}</span></div><div class="meta">送單 ${o.createdAt || "-"}</div><div class="pick-list">${o.items.map(i=>`<label class="check"><input type="checkbox" data-pick="${o.id}" data-product="${i.id}" ${i.picked?"checked":""}><span>${itemName(i)} · 單價 ${money(itemPrice(i))}</span><strong>× ${i.qty} ${itemUnit(i)}</strong></label>`).join("")}</div><div class="actions"><button class="primary" data-ship="${o.id}">完成出貨</button></div></div>`).join("")||`<div class="empty">沒有待出貨訂單。</div>`}</div></section>`;
     }
     function returnedQty(order,item){
       return (order.returns||[]).filter(r=>r.id===item.id && !!r.custom===!!item.custom && r.name===item.name).reduce((s,r)=>s+r.qty,0);
@@ -669,7 +671,7 @@
       const orders=state.orders.filter(o=>(o.status==="shipped"||o.status==="returned") && !o.returnClosedAt);
       document.getElementById("returnPage").innerHTML=`<section class="category"><div class="category-title"><span>退貨處理</span><span class="category-count">${orders.length} 張</span></div><div style="padding:10px">${orders.map(o=>{
         const available=o.items.map((i,idx)=>({...i,idx,available:shippedQty(i)-returnedQty(o,i)})).filter(i=>i.available>0);
-        return `<div class="order-card"><div class="order-title"><span>${attrText(o.name)} <span class="short-order" title="${attrText(o.id)}">${attrText(orderLabel(o.id))}</span> <span class="order-source ${sourceClass(o.channel)}">${sourceLabel(o.channel)}</span></span><span class="badge ${o.status}">${o.status==="returned"?"已有退貨紀錄":"可退貨"}</span></div><div class="meta">${o.returnedAt?`上次退貨 ${o.returnedAt}`:`出貨 ${o.shippedAt || "-"}`}</div>${available.length?`<div class="return-grid">${available.map(i=>`<label class="return-line"><input type="checkbox" data-return-check="${o.id}" data-index="${i.idx}"><span>${itemName(i)} · 單價 ${money(itemPrice(i))}<br><small>可退 ${i.available}</small></span><input type="number" min="1" max="${i.available}" value="${i.available}" data-return-qty="${o.id}" data-index="${i.idx}"></label>`).join("")}</div><div class="actions"><button class="danger" data-complete-return="${o.id}">完成退貨並回補庫存</button><button class="secondary" data-no-return="${o.id}">不退貨，移除這張</button></div>`:`<div class="empty">此訂單所有品項都已處理退貨。</div><div class="actions"><button class="secondary" data-no-return="${o.id}">退貨完成，移除這張</button></div>`}</div>`;
+        return `<div class="order-card"><div class="order-title"><span>${attrText(o.name)} <span class="short-order" title="${attrText(o.id)}">${attrText(orderLabel(o.id))}</span> <span class="order-source ${sourceClass(o.channel)}">${sourceLabel(o.channel)}</span></span><span class="badge ${o.status}">${o.status==="returned"?"已有退貨紀錄":"可退貨"}</span></div><div class="meta">${o.returnedAt?`上次退貨 ${o.returnedAt}`:`出貨 ${o.shippedAt || "-"}`}</div>${available.length?`<div class="return-grid">${available.map(i=>`<label class="return-line"><input type="checkbox" data-return-check="${o.id}" data-index="${i.idx}"><span>${itemName(i)} · 單價 ${money(itemPrice(i))}<br><small>可退 ${i.available} ${itemUnit(i)}</small></span><input type="number" min="1" max="${i.available}" value="${i.available}" data-return-qty="${o.id}" data-index="${i.idx}"></label>`).join("")}</div><div class="actions"><button class="danger" data-complete-return="${o.id}">完成退貨並回補庫存</button><button class="secondary" data-no-return="${o.id}">不退貨，移除這張</button></div>`:`<div class="empty">此訂單所有品項都已處理退貨。</div><div class="actions"><button class="secondary" data-no-return="${o.id}">退貨完成，移除這張</button></div>`}</div>`;
       }).join("")||`<div class="empty">尚無可退貨訂單。</div>`}</div></section>`;
     }
     function renderInventory(){
@@ -825,7 +827,7 @@
       cloudAction(async()=>{
         if(b.id==='saveOrder'){
           if(!pendingOrder?.items.length)throw Error('請至少選擇一個品項。');pendingOrder.cloudRequestId??=cloudRequestId||FuyuanCloud.random();cloudRequestId=pendingOrder.cloudRequestId;
-          const o=await FuyuanCloud.place({requestId:pendingOrder.cloudRequestId,channel:'order',name:pendingOrder.name,phone:'',note:pendingOrder.note,items:pendingOrder.items.map(i=>({id:i.id,name:i.custom?i.name:product(i.id).name,custom:!!i.custom,qty:i.qty,price:itemPrice(i)}))});cloudRequestId=null;clearCart();pendingOrder=null;closeModal('receiptModal');FuyuanCloud.notice('訂單 '+orderLabel(o.id)+' 已送至共用後台。');return;
+          const o=await FuyuanCloud.place({requestId:pendingOrder.cloudRequestId,channel:'order',name:pendingOrder.name,phone:'',note:pendingOrder.note,items:pendingOrder.items.map(i=>({id:i.id,name:i.custom?i.name:product(i.id).name,custom:!!i.custom,qty:i.qty,price:itemPrice(i),unit:i.unit??"件"}))});cloudRequestId=null;clearCart();pendingOrder=null;closeModal('receiptModal');FuyuanCloud.notice('訂單 '+orderLabel(o.id)+' 已送至共用後台。');return;
         }
         const id=b.dataset.ship||b.dataset.completeReturn||b.dataset.noReturn||b.dataset.deleteOrder,o=state.orders.find(o=>o.id===id);if(!o)throw Error('訂單已更新，請重新整理。');
         if(b.dataset.ship){const missing=o.items.filter(i=>!i.picked);if(missing.length&&!await confirmCloud(`本次有 ${missing.length} 項未勾選，不會出貨。確認完成出貨並釋放這些品項的預留庫存？`))return;await FuyuanCloud.request('/staff/orders/'+encodeURIComponent(id),'PATCH',{action:'ship',revision:o.revision,pickedIds:o.items.filter(i=>i.picked).map(i=>i.id)});FuyuanCloud.notice('已完成出貨；未出貨品項的預留庫存已釋放。');}
