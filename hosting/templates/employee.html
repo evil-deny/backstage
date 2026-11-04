@@ -260,7 +260,7 @@
       </section>
       <section class="box customer-box">
         <label>大名<input id="customerName" autocomplete="name" placeholder="請輸入大名"></label>
-        <label>備註<input id="customerNote" placeholder="例：不要辣、分開裝、晚點取"></label>
+        <label>備註<input id="customerNote"></label>
       </section>
 
       <details class="custom-panel" id="customProductsPanel">
@@ -439,7 +439,7 @@
 
     function initFilters(){
       const groupLabels=[...new Set(activeProducts().filter(p=>supplyKey(p)===activeSupply).sort(productSort).map(staffFilterLabel))];
-      const categories=["全部品項","冷凍","冷藏","乾貨",...groupLabels];
+      const categories=["全部品項",...STORAGE_OPTIONS.flatMap(storage=>[storage,...groupLabels.filter(label=>label.startsWith(storage+' / ')).sort((a,b)=>typeRank(a.slice(storage.length+3))-typeRank(b.slice(storage.length+3))||a.localeCompare(b,'zh-Hant'))])];
       document.getElementById("categoryFilter").innerHTML=categories.map(c=>`<option value="${attrText(c)}">${attrText(c)}</option>`).join("");
     }
     function visibleProducts(){
@@ -676,7 +676,7 @@
     }
     function renderShipping(){
       const orders=state.orders.filter(o=>o.status==="new"||o.status==="picking");
-      document.getElementById("shipPage").innerHTML=`<section class="category"><div class="category-title"><span>出貨劃記</span><span class="category-count">${orders.length} 張</span></div><div style="padding:10px"><div class="empty">送單時會先預留庫存；只勾實際出貨的品項，未勾的品項會釋放預留庫存，並且不計入銷售額。</div>${orders.map(o=>`<div class="order-card"><div class="order-title"><span>${attrText(o.name)} <span class="short-order" title="${attrText(o.id)}">${attrText(orderLabel(o.id))}</span> <span class="order-source ${sourceClass(o.channel)}">${sourceLabel(o.channel)}</span></span><span class="badge">${statusText(o.status)}</span></div><div class="meta">送單 ${o.createdAt || "-"}</div><div class="pick-list">${o.items.map(i=>`<label class="check"><input type="checkbox" data-pick="${o.id}" data-product="${i.id}" ${i.picked?"checked":""}><span>${itemName(i)} · 單價 ${money(itemPrice(i))}</span><strong>× ${i.qty} ${itemUnit(i)}</strong></label>`).join("")}</div><div class="actions"><button class="primary" data-ship="${o.id}">完成出貨</button></div></div>`).join("")||`<div class="empty">沒有待出貨訂單。</div>`}</div></section>`;
+      document.getElementById("shipPage").innerHTML=`<section class="category"><div class="category-title"><span>出貨劃記</span><span class="category-count">${orders.length} 張</span></div><div style="padding:10px">${orders.map(o=>`<div class="order-card"><div class="order-title"><span>${attrText(o.name)} <span class="short-order" title="${attrText(o.id)}">${attrText(orderLabel(o.id))}</span> <span class="order-source ${sourceClass(o.channel)}">${sourceLabel(o.channel)}</span></span><span class="badge">${statusText(o.status)}</span></div><div class="meta">送單 ${o.createdAt || "-"}</div><div class="pick-list">${o.items.map(i=>`<label class="check"><input type="checkbox" data-pick="${o.id}" data-product="${i.id}" ${i.picked?"checked":""}><span>${itemName(i)} · 單價 ${money(itemPrice(i))}</span><strong>× ${i.qty} ${itemUnit(i)}</strong></label>`).join("")}</div><div class="actions"><button class="primary" data-ship="${o.id}">完成出貨</button></div></div>`).join("")||`<div class="empty">沒有待出貨訂單。</div>`}</div></section>`;
     }
     function returnedQty(order,item){
       return (order.returns||[]).filter(r=>r.id===item.id && !!r.custom===!!item.custom && r.name===item.name).reduce((s,r)=>s+r.qty,0);
