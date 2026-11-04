@@ -8,6 +8,7 @@ mkdirSync('.sites-runtime/test',{recursive:true});
 await build({entryPoints:['lib/backstage.ts'],bundle:true,platform:'node',format:'esm',outfile:'.sites-runtime/test/backstage.mjs'});
 const {handleBackstage}=await import('../.sites-runtime/test/backstage.mjs');
 const {analyze}=await import('../public/metrics.js');
+const {catalogOrder}=await import('../public/catalog-order.js');
 await build({entryPoints:['lib/google-access.ts'],bundle:true,platform:'node',format:'esm',outfile:'.sites-runtime/test/access.mjs'});
 const {pkce,digest}=await import('../.sites-runtime/test/access.mjs');
 const config={ADMIN_EMAILS:'owner@example.test',GOOGLE_CLIENT_ID:'test-client.apps.googleusercontent.com'};
@@ -230,4 +231,22 @@ test('新增品項原子接續固定編號，隱藏與改分類不改號，三�
  const reordered=(await request('/api/admin/products')).data;assert.deepEqual(reordered.filter(p=>p.name.startsWith('排序測試')).map(p=>p.id),[a.id,d.id,c.id,b.id]);
  // Existing products keep their stable identifiers and remain addressable after insertion.
  for(const p of original){const saved=reordered.find(x=>x.id===p.id);assert.ok(saved);assert.equal(saved.name,p.name);}
+ // Original category outranks storage; company dry goods precede supplier frozen goods.
+ const categoryMoved=(await request('/api/admin/products/'+b.id,'PATCH',{...moved,category:'公司庫存'})).data;assert.equal(categoryMoved.id,b.id);
+ for(const endpoint of ['/api/admin/products','/api/products?channel=order','/api/products?channel=customer']){
+  const rows=(await request(endpoint)).data;assert.deepEqual(rows.filter(p=>p.name.startsWith('排序測試')).map(p=>p.id),[b.id,a.id,d.id,c.id]);
+ }
+});
+
+test('分類優先，再保存方式、類別及商品名稱；同保存類別不跨原本分類混排',()=>{
+ const sample=[
+  {id:'p1',category:'兩天一次(三五日結單/一四六到貨)',storage:'冷凍',type:'湯品/鍋物',name:'湯2'},
+  {id:'p2',category:'公司庫存',storage:'乾貨',type:'醬料',name:'醬油'},
+  {id:'p3',category:'公司庫存',storage:'冷凍',type:'湯品/鍋物',name:'湯10'},
+  {id:'p4',category:'公司庫存',storage:'冷凍',type:'湯品/鍋物',name:'湯2'},
+  {id:'p5',category:'公司庫存',storage:'冷凍',type:'丸類/火鍋料',name:'丸子'},
+  {id:'p6',category:'新增分類',storage:'冷凍',type:'湯品/鍋物',name:'湯1'},
+ ];
+ assert.deepEqual(sample.sort(catalogOrder).map(p=>p.id),['p4','p3','p5','p2','p1','p6']);
+ for(const template of ['employee','customer'])assert.match(readFileSync('templates/'+template+'.html','utf8'),/category\s*\|\|/);
 });
