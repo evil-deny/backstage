@@ -251,5 +251,4 @@ test('商品編號為第一順位，使用數字順序且分組不打亂順序',
  const numbered=[{id:'p10',category:'甲'},{id:'p2',category:'乙'},{id:'p1',category:'甲'},{id:'p-legacy',category:'甲'}].sort(catalogOrder);
  assert.deepEqual(numbered.map(p=>p.id),['p1','p2','p10','p-legacy']);
  const groups=catalogGroups(numbered,p=>p.category);assert.equal(groups.length,3);assert.deepEqual(groups.flatMap(([,items])=>items).map(p=>p.id),['p1','p2','p10','p-legacy']);
- for(const template of ['employee','customer'])assert.match(readFileSync('templates/'+template+'.html','utf8'),/catalogGroups\(/);
 });

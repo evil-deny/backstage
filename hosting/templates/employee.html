@@ -228,11 +228,20 @@
 .short-order{font-size:.8em;color:#52645c;font-weight:600;margin:0 8px}.order-sync{display:flex;align-items:center;justify-content:flex-end;gap:12px;margin:0 0 12px;font-size:14px;color:#64748b}.order-sync button{min-height:38px;font-size:16px}
 
 .product-code{display:block;font-size:14px;font-weight:700;color:#527568;line-height:1.5;margin-top:4px}
+
+/* Employee mobile catalog: list-only layout; shipping and return controls are untouched. */
+.staff-catalog-nav{position:sticky;display:block;top:82px;padding:0 0 10px;background:#f5f7f8}.supply-tabs{display:flex;gap:0;background:#fff;border:1px solid #dce5e2;border-radius:12px;overflow-x:auto;margin-bottom:10px}.supply-tab{flex:1;min-width:140px;min-height:58px;display:flex;align-items:center;justify-content:center;gap:9px;padding:12px;background:white;color:#66736e;border-radius:0;border-bottom:3px solid transparent;font-size:20px;white-space:nowrap}.supply-tab small{font-size:12px;font-weight:500}.supply-tab.active{color:#0f766e;background:#f0f8f5;border-bottom-color:#0f766e}.staff-search-tools{display:grid;grid-template-columns:minmax(0,1fr) 150px;gap:8px}.staff-search-tools input,.staff-search-tools select{min-height:46px;font-size:16px;padding:10px 12px}
+#orderPage .customer-box{grid-template-columns:1fr 1fr;gap:10px;padding:12px;margin-top:2px}#orderPage .customer-box label{font-size:14px}#orderPage .customer-box input{min-height:44px;font-size:16px;padding:10px}#customProductsPanel{padding:0;overflow:hidden}#customProductsPanel summary{display:flex;justify-content:space-between;align-items:center;gap:8px;min-height:50px;padding:12px;cursor:pointer;font-size:16px;list-style:none}#customProductsPanel summary::-webkit-details-marker{display:none}#customProductsPanel summary span{font-size:13px;font-weight:500;color:#75827c}#customProductsPanel[open] summary{border-bottom:1px solid var(--line)}#customProductsPanel .custom-grid{padding:0 12px 12px}#customProductsPanel .custom-list{margin:0;padding:0 12px}#customProductsPanel .custom-list:empty{display:none}
+#productList .staff-list{background:white;border:1px solid #dce5e2;border-radius:12px;overflow:hidden;margin-top:4px}#productList .staff-list-heading{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 14px;background:#f0f5f3;border-bottom:1px solid #e1e8e4}#productList .staff-list-heading h2{margin:0;font-size:16px}#productList .staff-list-heading>span{font-size:13px;color:#77857e}#productList .staff-row{display:grid;grid-template-columns:minmax(0,1fr) 140px;grid-template-rows:auto;align-items:center;gap:12px;min-height:92px;padding:14px;margin:0;border:0;border-bottom:1px solid #edf0ee;border-radius:0;background:white;box-shadow:none}#productList .staff-row:last-child{border-bottom:0}#productList .staff-row.selected{background:#edf8f2;box-shadow:inset 3px 0 #0f766e}#productList .staff-row-info{min-width:0}#productList .staff-row-title{display:flex;gap:7px;align-items:baseline;flex-wrap:wrap}#productList .staff-row h3{margin:0;font-size:18px;line-height:1.45;letter-spacing:0;overflow-wrap:anywhere}#productList .staff-code{font-size:12px;font-weight:700;color:#618575;white-space:nowrap}#productList .staff-row-meta{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:6px}#productList .staff-row-price{font-size:17px;color:#b34530;line-height:1.4;overflow-wrap:anywhere}#productList .staff-row-price>span{font-size:14px;font-weight:500;color:#7a665e}#productList .staff-stock{font-size:12px;color:#7a877f;line-height:1.5}#productList .staff-stock.sold-out{color:#ae4535}#productList .staff-row .qty{grid-area:auto;grid-column:auto;grid-row:auto;display:grid;grid-template-columns:44px 44px 44px;gap:4px;align-items:center;align-self:center}#productList .staff-row .qty button{width:44px;min-height:46px;height:46px;border-radius:9px;background:#edf2f0;color:#31534a;font-size:27px}#productList .staff-row .qty button:last-child{background:#dcefe6;color:#0e6b52}#productList .staff-row .qty button:disabled{opacity:.4}#productList .staff-row .qty input{width:44px;min-width:0;min-height:46px;height:46px;padding:4px 0;font-size:21px;border:1px solid #e2e9e5;border-radius:8px;background:white}
+.bottom-bar{padding:10px 14px calc(10px + env(safe-area-inset-bottom))}.bottom-bar .bottom-inner{grid-template-columns:minmax(0,1fr) auto;gap:12px}.bottom-bar .total{font-size:13px}.bottom-bar .total strong{font-size:28px;line-height:1.15}.bottom-bar .total small{display:block;font-size:12px;color:#77857e;font-weight:500;margin-top:3px}.bottom-bar .checkout{width:auto;min-width:170px;min-height:54px;padding:10px 22px;font-size:20px}.main-tabs{grid-template-columns:repeat(3,minmax(0,1fr))}.main-tabs .main-tab{min-height:46px;font-size:18px}.order-sync{font-size:12px;gap:10px}.order-sync button{min-height:34px;font-size:13px}.topbar{position:sticky;top:0;min-height:82px}
+@media(max-width:600px){.topbar{padding:10px 12px;min-height:66px}.brand img{width:40px;height:40px}.brand strong{font-size:20px}.brand span{font-size:12px}.wrap{padding:10px 10px 130px}.staff-catalog-nav{top:66px}.supply-tab{font-size:18px;min-height:52px}.staff-search-tools{grid-template-columns:minmax(0,1fr) 125px}.staff-search-tools input,.staff-search-tools select{font-size:15px;padding:9px 10px}#productList .staff-row{grid-template-columns:minmax(0,1fr) 132px;gap:8px;padding:13px 12px}#productList .staff-row .qty{grid-template-columns:42px 40px 42px;gap:4px}#productList .staff-row .qty button{width:42px}#productList .staff-row .qty input{width:40px}#productList .staff-row h3{font-size:17px}#productList .staff-row-meta{gap:6px}.bottom-bar .checkout{min-width:158px;font-size:19px}}
+@media(max-width:350px){#productList .staff-row{grid-template-columns:minmax(0,1fr) 120px;padding:12px 10px}#productList .staff-row .qty{grid-template-columns:38px 36px 38px;gap:4px}#productList .staff-row .qty button{width:38px}#productList .staff-row .qty input{width:36px}.staff-search-tools{grid-template-columns:minmax(0,1fr) 110px}.bottom-bar .checkout{min-width:138px}}
+
 </style>
 </head>
 <body>
   <header class="topbar">
-    <div class="brand"><img src="assets/logo.jpg" alt="福緣素食 logo"><div><strong>福緣訂單系統</strong><span>輸入大名，選品項，確認後送出</span></div></div>
+    <div class="brand"><img src="/logo.jpg" alt="福緣素食 logo"><div><strong>福緣訂單系統</strong><span>輸入大名，選品項，確認後送出</span></div></div>
     <button class="admin-open" id="openAdmin" hidden>後台</button>
   </header>
 
@@ -245,13 +254,17 @@
 
     <div class="order-sync"><span id="orderSyncStatus" role="status">訂單每 15 秒同步</span><button class="secondary" id="refreshOrders">更新訂單 ↻</button></div>
     <section class="main-view active" id="orderPage">
+      <section class="search-row staff-catalog-nav" aria-label="選購商品">
+        <div id="supplyTabs" class="supply-tabs" role="tablist" aria-label="商品來源"></div>
+        <div class="staff-search-tools"><input id="search" type="search" placeholder="搜尋品名、品牌或編號" aria-label="搜尋品項"><select id="categoryFilter" aria-label="分類篩選"></select></div>
+      </section>
       <section class="box customer-box">
         <label>大名<input id="customerName" autocomplete="name" placeholder="請輸入大名"></label>
         <label>備註<input id="customerNote" placeholder="例：不要辣、分開裝、晚點取"></label>
       </section>
 
-      <section class="custom-panel">
-        <strong>客製化品項</strong>
+      <details class="custom-panel" id="customProductsPanel">
+        <summary><strong>客製化品項</strong><span>需要時再新增 ＋</span></summary>
         <div class="custom-grid" style="margin-top:10px">
           <label>品名<input id="customName" placeholder="例：代購商品、特別組合"></label>
           <label>單價<input id="customPrice" type="number" min="0" inputmode="numeric" placeholder="0"></label>
@@ -259,20 +272,17 @@
           <button class="blue" id="addCustom">新增</button>
         </div>
         <div class="custom-list" id="customList"></div>
-      </section>
+      </details>
 
-      <section class="search-row">
-        <input id="search" type="search" placeholder="搜尋品項名稱">
-        <select id="categoryFilter" aria-label="分類篩選"></select>
-      </section>
-      <div id="productList"></div>
+
+      <div id="productList" role="tabpanel" aria-label="商品清單"></div>
     </section>
 
     <section class="main-view" id="shipPage"></section>
     <section class="main-view" id="returnPage"></section>
   </main>
 
-  <footer class="bottom-bar"><div class="bottom-inner"><div class="total">合計 <strong id="cartTotal">$0</strong></div><button class="checkout" id="checkout">確認訂單</button></div></footer>
+  <footer class="bottom-bar"><div class="bottom-inner"><div class="total">合計 <strong id="cartTotal">$0</strong><small id="cartItemCount">尚未選擇商品</small></div><button class="checkout" id="checkout">確認訂單</button></div></footer>
 
   <section class="modal" id="receiptModal"><div class="modal-card"><div class="modal-head"><h2>訂單確認</h2><button class="close" data-close="receiptModal">×</button></div><div class="modal-body"><div id="receiptContent"></div><div class="actions"><button class="secondary" data-close="receiptModal">返回修改</button><button class="blue" id="printReceipt">影印明細</button><button class="blue" id="shareReceiptImage">圖片分享</button><button class="primary" id="saveOrder">送出訂單</button></div></div></div></section>
   <section class="modal" id="imageModal"><div class="image-modal-card"><div class="modal-head"><h2 id="imageModalTitle">商品圖片</h2><button class="close" data-close="imageModal">×</button></div><img id="imagePreview" class="image-preview" src="" alt=""></div></section>
@@ -286,6 +296,9 @@
     await FuyuanCloud.ready;
     document.addEventListener("keydown",e=>{if(e.target.matches("[data-image-open]")&&["Enter"," "].includes(e.key)){e.preventDefault();e.target.click();}});
     const PRODUCTS=await FuyuanCloud.loadProducts('order');
+    let activeSupply='company';
+    const supplyKey=p=>p.category==='公司庫存'?'company':String(p.category||'').startsWith('兩天一次')?'two-day':p.category||'other';
+    const staffFilterLabel=p=>productStorage(p)+' / '+productType(p);
     const CLOUD_ORDERS=await FuyuanCloud.request('/staff/orders').catch(e=>{FuyuanCloud.notice('訂單尚未同步，請按「更新訂單」重試。');return [];});
     // Authentication is enforced by the shared API, not by a browser password.
     const STORE_KEY = "clearOrderSystemV3";
@@ -425,14 +438,19 @@
     }
 
     function initFilters(){
-      const groupLabels=[...new Set(activeProducts().sort(productSort).map(p=>productGroupLabel(p)))];
+      const groupLabels=[...new Set(activeProducts().filter(p=>supplyKey(p)===activeSupply).sort(productSort).map(staffFilterLabel))];
       const categories=["全部品項","冷凍","冷藏","乾貨",...groupLabels];
       document.getElementById("categoryFilter").innerHTML=categories.map(c=>`<option value="${attrText(c)}">${attrText(c)}</option>`).join("");
     }
     function visibleProducts(){
-      const keyword=document.getElementById("search").value.trim().toLowerCase();
-      const cat=document.getElementById("categoryFilter").value;
-      return activeProducts().filter(p => p.name.toLowerCase().includes(keyword) && (cat==="全部品項" || productStorage(p)===cat || productGroupLabel(p)===cat)).sort(productSort);
+      const keyword=document.getElementById("search").value.trim().toLowerCase(),cat=document.getElementById("categoryFilter").value;
+      return activeProducts().filter(p=>supplyKey(p)===activeSupply&&(p.name+' '+(p.code||p.id)).toLowerCase().includes(keyword)&&(cat==="全部品項"||productStorage(p)===cat||staffFilterLabel(p)===cat)).sort(productSort);
+    }
+    function renderSupplyTabs(){
+      const all=activeProducts(),sources=[['company','公司庫存'],['two-day','兩天一次']];
+      for(const p of all)if(!sources.some(([key])=>key===supplyKey(p)))sources.push([supplyKey(p),p.category||'其他品項']);
+      if(!sources.some(([key])=>key===activeSupply))activeSupply='company';
+      document.getElementById('supplyTabs').innerHTML=sources.map(([key,name])=>`<button type="button" role="tab" id="supply-${attrText(key)}" data-supply="${attrText(key)}" aria-controls="productList" aria-selected="${activeSupply===key}" tabindex="${activeSupply===key?0:-1}" class="supply-tab ${activeSupply===key?'active':''}"><span>${attrText(name)}</span><small>${all.filter(p=>supplyKey(p)===key).length} 項</small></button>`).join('');
     }
     function productSort(a,b){
       return catalogOrder({...a,storage:productStorage(a),type:productType(a)},{...b,storage:productStorage(b),type:productType(b)});
@@ -444,11 +462,8 @@
       return `<h3>${attrText(title)}</h3><span class="item-spec">${specs.map(attrText).join(/[=＝]/.test(name)?" = ":" · ")}</span>`;
     }
     function renderProducts(){
-      const grouped=catalogGroups(visibleProducts(),productGroupLabel);
-      document.getElementById("productList").innerHTML=grouped.map(([category,items])=>`
-        <section class="category"><div class="category-title"><span>${attrText(category)}</span><span class="category-count">${items.length} 項</span></div><div class="items">
-        ${items.map(p=>`<article class="item ${standardCart[p.id]?'selected':''}"><div class="item-media"><img src="${attrText(p.image||PLACEHOLDER)}" alt="${attrText(p.name)}" loading="lazy" data-image-open="${attrText(p.image||PLACEHOLDER)}" data-image-name="${attrText(p.name)}" tabindex="0" role="button" aria-label="放大 ${attrText(p.name)} 商品圖片" onerror="this.src='${PLACEHOLDER}'">${state.stock[p.id]===null?"":`<span class="stock">庫存 ${state.stock[p.id]}</span>`}</div><div class="item-heading"><div class="item-name">${productNameMarkup(p.name)}<small class="product-code">${attrText(p.code||p.id)}</small></div><div class="item-price"><span>批發價</span><strong>${p.price===0?"時價":money(p.price)}<small>／${attrText(p.unit??"件")}</small></strong></div></div><div class="qty"><button type="button" data-minus="${p.id}" aria-label="減少 ${attrText(p.name)} 數量">−</button><input id="qty-${p.id}" type="number" min="0" value="${standardCart[p.id] || 0}" inputmode="numeric" data-qty="${p.id}" aria-label="${attrText(p.name)} 數量"><button type="button" data-plus="${p.id}" aria-label="增加 ${attrText(p.name)} 數量">＋</button></div></article>`).join("")}
-        </div></section>`).join("") || `<div class="empty">找不到品項。</div>`;
+      renderSupplyTabs();const list=visibleProducts(),source=document.querySelector('.supply-tab.active span')?.textContent||'商品';
+      document.getElementById("productList").innerHTML=`<section class="staff-list"><div class="staff-list-heading"><h2>${attrText(source)}</h2><span>${list.length} 項商品</span></div>${list.map(p=>`<article class="item staff-row ${standardCart[p.id]?'selected':''}"><div class="staff-row-info"><div class="staff-row-title"><span class="staff-code">${attrText(p.code||p.id)}</span><h3>${attrText(p.name)}</h3></div><div class="staff-row-meta"><strong class="staff-row-price">${p.price===0?"時價":money(p.price)}<span> / ${attrText(p.unit??"件")}</span></strong>${state.stock[p.id]===null?'':`<small class="staff-stock ${state.stock[p.id]===0?'sold-out':''}">${state.stock[p.id]===0?'已售完':'庫存 '+state.stock[p.id]}</small>`}</div></div><div class="qty"><button type="button" data-minus="${p.id}" aria-label="減少 ${attrText(p.name)} 數量">−</button><input id="qty-${p.id}" type="number" min="0" step="1" value="${standardCart[p.id]||0}" inputmode="numeric" data-qty="${p.id}" aria-label="${attrText(p.name)} 數量"><button type="button" data-plus="${p.id}" aria-label="增加 ${attrText(p.name)} 數量" ${state.stock[p.id]===0?'disabled':''}>＋</button></div></article>`).join('')||'<p class="empty">找不到品項，試試其他名稱或分類。</p>'}</section>`;
       updateTotal();
     }
     function renderCustomList(){
@@ -458,7 +473,7 @@
       updateTotal();
     }
     function updateTotal(){
-      document.getElementById("cartTotal").textContent = money(cartItems().reduce((sum,i)=>sum+itemSubtotal(i),0));
+      const selected=cartItems();document.getElementById("cartTotal").textContent = money(selected.reduce((sum,i)=>sum+itemSubtotal(i),0));document.getElementById("cartItemCount").textContent=selected.length?`已選 ${selected.length} 項`:'尚未選擇商品';
     }
     function setQty(id, qty){
       const stock=state.stock[id];
@@ -736,6 +751,8 @@
     }
 
     document.addEventListener("click", e=>{
+      const supply=e.target.closest('[data-supply]');if(supply){activeSupply=supply.dataset.supply;document.getElementById('search').value='';initFilters();renderProducts();document.querySelector('.supply-tab.active')?.focus({preventScroll:true});return;}
+
       const inventoryPreview=e.target.closest("[data-inventory-preview]"); if(inventoryPreview){ inventoryPreview.closest(".inventory-row")?.classList.toggle("previewing"); return; }
       const imageOpen=e.target.closest("[data-image-open]"); if(imageOpen){ document.getElementById("imageModalTitle").textContent=imageOpen.dataset.imageName || "商品圖片"; const img=document.getElementById("imagePreview"); img.src=imageOpen.dataset.imageOpen || PLACEHOLDER; img.alt=imageOpen.dataset.imageName || ""; openModal("imageModal"); return; }
       const minus=e.target.closest("[data-minus]"); if(minus) setQty(minus.dataset.minus,Number(document.getElementById("qty-"+minus.dataset.minus).value||0)-1);
@@ -843,6 +860,7 @@
     window.addEventListener('storage',e=>{if(e.key==='fuyuan-orders-updated')refreshCloud().catch(error=>FuyuanCloud.notice(error.message));});
     FuyuanCloud.notice('已連接共用資料庫，價格、庫存與訂單會自動同步。');
 
+    document.getElementById('supplyTabs').addEventListener('keydown',e=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;const buttons=[...document.querySelectorAll('[data-supply]')],i=buttons.indexOf(document.activeElement);if(i<0)return;e.preventDefault();const next=e.key==='Home'?0:e.key==='End'?buttons.length-1:(i+(e.key==='ArrowRight'?1:-1)+buttons.length)%buttons.length;buttons[next].click();});
     initFilters(); renderProducts(); renderCustomList();
   </script>
 </body>
