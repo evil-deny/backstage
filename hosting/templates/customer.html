@@ -164,6 +164,7 @@
 <script src="/cloud-sync.js"></script>
 <script type="module">
 import {orderLabel} from "/order-display.js";
+import {catalogOrder} from "/catalog-order.js";
 // Product snapshot from order. No customer information is stored here.
 await FuyuanCloud.ready;
 const PRODUCTS=await FuyuanCloud.loadProducts('customer');
@@ -184,7 +185,7 @@ function selected(){return PRODUCTS.filter(p=>cart[p.id]>0).map(p=>({id:p.id,nam
 function total(items){return items.reduce((sum,p)=>sum+p.price*p.qty,0);}
 function updateTotal(){const items=selected();$('cartCount').textContent=items.length?`${items.length} 種商品・${items.reduce((s,p)=>s+p.qty,0)} 件`:'尚未選擇商品';$('cartTotal').textContent=money(total(items))+(items.some(p=>p.market)?'＋時價':'');}
 function setQty(id,value){if(!PRODUCTS.some(p=>p.id===id))return;const p=PRODUCTS.find(p=>p.id===id);const qty=p.stock===null?count(value):Math.min(count(value),p.stock);if(qty)cart[id]=qty;else delete cart[id];const input=$('qty-'+id);if(input){input.value=qty;input.closest('article').classList.toggle('selected',qty>0);}updateTotal();persist();}
-function sortProducts(a,b){return ['冷凍','冷藏','乾貨'].indexOf(a.storage)-['冷凍','冷藏','乾貨'].indexOf(b.storage)||TYPES.indexOf(a.type)-TYPES.indexOf(b.type)||a.name.localeCompare(b.name,'zh-Hant');}
+const sortProducts=catalogOrder;
 function filters(){const groups=[...new Set([...PRODUCTS].sort(sortProducts).map(p=>p.storage+' / '+p.type))];$('categoryFilter').innerHTML=['全部品項','冷凍','冷藏','乾貨',...groups].map(v=>`<option>${esc(v)}</option>`).join('');}
 function productNameMarkup(name){
  const specs=[];const title=String(name).replace(/[（(](?:[0-9一二三四五六七八九十半兩][^()（）]*?)[)）]|\d+(?:\.\d+)?(?:台斤|公斤|公克|克|斤|包|盒|箱|片|條|顆|個|入|付|捲)(?:裝)?/g,part=>{specs.push(part);return '';}).replace(/\s*[=＝]\s*$/g,'').trim();

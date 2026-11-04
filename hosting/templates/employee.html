@@ -230,7 +230,7 @@
 </head>
 <body>
   <header class="topbar">
-    <div class="brand"><img src="/logo.jpg" alt="福緣素食 logo"><div><strong>福緣訂單系統</strong><span>輸入大名，選品項，確認後送出</span></div></div>
+    <div class="brand"><img src="assets/logo.jpg" alt="福緣素食 logo"><div><strong>福緣訂單系統</strong><span>輸入大名，選品項，確認後送出</span></div></div>
     <button class="admin-open" id="openAdmin" hidden>後台</button>
   </header>
 
@@ -280,6 +280,7 @@
   <script src="/cloud-sync.js"></script>
   <script type="module">
     import {orderLabel,sourceLabel,sourceClass} from "/order-display.js";
+    import {catalogOrder} from "/catalog-order.js";
     await FuyuanCloud.ready;
     document.addEventListener("keydown",e=>{if(e.target.matches("[data-image-open]")&&["Enter"," "].includes(e.key)){e.preventDefault();e.target.click();}});
     const PRODUCTS=await FuyuanCloud.loadProducts('order');
@@ -432,10 +433,7 @@
       return activeProducts().filter(p => p.name.toLowerCase().includes(keyword) && (cat==="全部品項" || productStorage(p)===cat || productGroupLabel(p)===cat)).sort(productSort);
     }
     function productSort(a,b){
-      return storageRank(productStorage(a))-storageRank(productStorage(b))
-        || typeRank(productType(a))-typeRank(productType(b))
-        || productType(a).localeCompare(productType(b),"zh-Hant")
-        || a.name.localeCompare(b.name,"zh-Hant");
+      return catalogOrder({...a,storage:productStorage(a),type:productType(a)},{...b,storage:productStorage(b),type:productType(b)});
     }
     function productNameMarkup(name){
       const specs=[];

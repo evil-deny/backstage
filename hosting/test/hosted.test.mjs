@@ -21,7 +21,7 @@ async function request(path,method='GET',body,auth=true,origin){const headers={.
 
 test('批發與顧客單位獨立同步、歷史快照、退貨與分析保持原單位',async()=>{
  const legacy=(await request('/api/products')).data[0];assert.equal(legacy.unit,'件');
- let p=(await request('/api/admin/products','POST',{name:'雙單位測試',category:'測試',type:'豆製品',storage:'冷藏',image:'',price:60,orderPrice:600,orderUnit:'箱',customerUnit:'包',stock:null,orderVisible:true,customerVisible:true})).data;
+ let p=(await request('/api/admin/products','POST',{name:'雙單位測試',category:'測試',type:'豆製品',storage:'冷藏',image:'',price:60,orderPrice:600,orderUnit:'箱',customerUnit:'包',stock:null,orderVisible:true,customerVisible:true})).data;assert.equal(p.id,'p198');
  for(const [channel,unit,price] of [['order','箱',600],['customer','包',60]]){
   const pub=(await request('/api/products?channel='+channel)).data.find(x=>x.id===p.id);assert.equal(pub.unit,unit);assert.equal(pub.price,price);assert.equal('orderUnit' in pub,false);assert.equal('customerUnit' in pub,false);
  }
@@ -205,4 +205,29 @@ test('顧客送出的訂單出現在同一份員工待出貨清單並可揀貨�
  let result=await request('/api/staff/orders/'+order.id,'PATCH',{revision:order.revision,action:'pick',itemId:p.id,picked:true},false);assert.equal(result.status,200);order=result.data;
  result=await request('/api/staff/orders/'+order.id,'PATCH',{revision:order.revision,action:'ship',pickedIds:[p.id]},false);assert.equal(result.status,200);order=result.data;assert.equal(order.status,'shipped');assert.equal(order.channel,'customer');
  result=await request('/api/staff/orders/'+order.id,'PATCH',{revision:order.revision,action:'return',items:[{id:p.id,qty:1}]},false);assert.equal(result.status,200);assert.equal((await request('/api/admin/products')).data.find(x=>x.id===p.id).stock,p.stock);
+});
+
+test('新增品項原子接續固定編號，隱藏與改分類不改號，三個目錄自動排入原有類別',async()=>{
+ const original=(await request('/api/admin/products')).data;
+ const next=Math.max(...original.filter(p=>/^p\d+$/.test(p.id)).map(p=>Number(p.id.slice(1))))+1;
+ const body={name:'排序測試湯10',category:'測試',type:'湯品/鍋物',storage:'冷凍',image:'',price:10,stock:null,orderVisible:true,customerVisible:true};
+ const result=await Promise.all([
+  request('/api/admin/products','POST',{...body,id:'p1'}),
+  request('/api/admin/products','POST',{...body,name:'排序測試湯2'}),
+ ]);
+ assert.ok(result.every(r=>r.status===201));assert.deepEqual(result.map(r=>r.data.id).sort(),['p'+next,'p'+(next+1)].sort());
+ let a=result[0].data,b=result[1].data;
+ a=(await request('/api/admin/products/'+a.id,'PATCH',{...a,orderVisible:false,customerVisible:false})).data;assert.equal(a.id,result[0].data.id);
+ const c=(await request('/api/admin/products','POST',{...body,name:'排序測試冷藏',storage:'冷藏'})).data;assert.equal(c.id,'p'+(next+2));
+ const d=(await request('/api/admin/products','POST',{...body,name:'排序測試新分類',type:'新增類別'})).data;assert.equal(d.id,'p'+(next+3));
+ a=(await request('/api/admin/products/'+a.id,'PATCH',{...a,orderVisible:true,customerVisible:true})).data;
+ const expected=[b.id,a.id,d.id,c.id];
+ for(const path of ['/api/admin/products','/api/products?channel=order','/api/products?channel=customer']){
+  const all=(await request(path)).data;assert.deepEqual(all.filter(p=>p.name.startsWith('排序測試')).map(p=>p.id),expected);
+  const before=all.findIndex(p=>p.id===b.id),after=all.findIndex(p=>p.id===a.id);assert.ok(before<after);
+ }
+ const moved=(await request('/api/admin/products/'+b.id,'PATCH',{...b,storage:'乾貨',type:'醬料'})).data;assert.equal(moved.id,b.id);
+ const reordered=(await request('/api/admin/products')).data;assert.deepEqual(reordered.filter(p=>p.name.startsWith('排序測試')).map(p=>p.id),[a.id,d.id,c.id,b.id]);
+ // Existing products keep their stable identifiers and remain addressable after insertion.
+ for(const p of original){const saved=reordered.find(x=>x.id===p.id);assert.ok(saved);assert.equal(saved.name,p.name);}
 });

@@ -1,4 +1,5 @@
 import catalog from '../data/catalog.json';
+import {catalogOrder} from '../public/catalog-order.js';
 import {isAdmin,allowedOrigin,corsHeaders,startGoogleLogin,googleLogin,revoke,digest,type AccessConfig} from './google-access';
 type Product={id:string;name:string;category:string;type:string;storage:string;image:string;price:number;orderPrice:number;orderUnit:string;customerUnit:string;stock:number|null;orderVisible:boolean;customerVisible:boolean;revision:number};
 type Item={id:string;name:string;price:number;qty:number;unit?:string;market:boolean;returnedAt?:string;custom?:boolean;picked?:boolean};
@@ -10,13 +11,21 @@ let seeded:Promise<void>|null=null;
 function decode(row:any):Product{const body=JSON.parse(row.body);return {...body,orderUnit:body.orderUnit??'件',customerUnit:body.customerUnit??'件',stock:row.stock,price:row.price,orderPrice:row.order_price??row.price,revision:row.revision,orderVisible:!!row.order_visible,customerVisible:!!row.customer_visible};}
 export function createRepository(db:D1Database){
  const product=async(id:string)=>{const row=await db.prepare('SELECT * FROM inventory WHERE id=?').bind(id).first();return row?decode(row):fail(404,'找不到商品');};
- const products=async()=> (await db.prepare('SELECT * FROM inventory ORDER BY rowid').all()).results.map(decode);
+ const products=async()=> (await db.prepare('SELECT * FROM inventory ORDER BY rowid').all()).results.map(decode).sort(catalogOrder);
  const orders=async():Promise<Order[]>=> (await db.prepare('SELECT body,revision FROM order_records ORDER BY rowid DESC').all<any>()).results.map(row=>({...JSON.parse(row.body),revision:row.revision}));
  const order=async(id:string):Promise<Order>=>{const row=await db.prepare('SELECT body,revision FROM order_records WHERE id=?').bind(id).first<any>();return row?{...JSON.parse(row.body),revision:row.revision}:fail(404,'找不到訂單');};
  const guard=(id:string)=>db.prepare('INSERT INTO mutation_guards(id,ok) VALUES(?,changes())').bind(id);
  return {product,products,orders,order,
   async seed(){if(await db.prepare('SELECT id FROM inventory LIMIT 1').first())return;const batches:D1PreparedStatement[]=[];for(let start=0;start<catalog.length;start+=10){const group=catalog.slice(start,start+10);batches.push(db.prepare('INSERT OR IGNORE INTO inventory(id,body,stock,price,order_visible,customer_visible,revision) VALUES '+group.map(()=>'(?,?,?,?,?,?,?)').join(',')).bind(...group.flatMap(p=>[p.id,JSON.stringify(p),p.stock,p.price,p.orderVisible?1:0,p.customerVisible?1:0,p.revision])));}await db.batch(batches);},
-  async addProduct(p:Product){await db.prepare('INSERT INTO inventory(id,body,stock,price,order_price,order_visible,customer_visible,revision) VALUES(?,?,?,?,?,?,?,?)').bind(p.id,JSON.stringify(p),p.stock,p.price,p.orderPrice,p.orderVisible?1:0,p.customerVisible?1:0,1).run();return product(p.id);},
+  async addProduct(p:Omit<Product,'id'>){
+   // Allocate the next p-number inside the INSERT, so simultaneous creates cannot share an ID.
+   const row=await db.prepare(`INSERT INTO inventory(id,body,stock,price,order_price,order_visible,customer_visible,revision)
+    SELECT 'p'||next,json_set(?,'$.id','p'||next),?,?,?,?,?,1 FROM
+    (SELECT COALESCE(MAX(CAST(substr(id,2) AS INTEGER)),0)+1 AS next FROM inventory
+     WHERE id GLOB 'p[0-9]*' AND substr(id,2) NOT GLOB '*[^0-9]*') RETURNING *`)
+    .bind(JSON.stringify(p),p.stock,p.price,p.orderPrice,p.orderVisible?1:0,p.customerVisible?1:0).first();
+   return decode(row);
+  },
   async updateProduct(p:Product){const r=await db.prepare('UPDATE inventory SET body=?,stock=?,price=?,order_price=?,order_visible=?,customer_visible=?,revision=revision+1 WHERE id=? AND revision=?').bind(JSON.stringify(p),p.stock,p.price,p.orderPrice,p.orderVisible?1:0,p.customerVisible?1:0,p.id,p.revision).run();if(!r.meta.changes)fail(409,'商品已在其他視窗更新，請重新整理');return product(p.id);},
   async findRequest(id:string):Promise<Order|null>{const row=await db.prepare('SELECT body FROM order_records WHERE request_id=?').bind(id).first<any>();return row?JSON.parse(row.body):null;},
   async place(o:Order,requestId:string){const batch=crypto.randomUUID(),statements:D1PreparedStatement[]=[];for(const [index,i]of o.items.entries()){if(i.custom)continue;statements.push(db.prepare(`UPDATE inventory SET stock=CASE WHEN stock IS NULL THEN NULL ELSE stock-? END,revision=revision+1 WHERE id=? AND ${o.channel==='order'?'COALESCE(order_price,price)':'price'}=? AND ${o.channel==='order'?'order_visible':'customer_visible'}=1 AND (stock IS NULL OR stock>=?) AND COALESCE(json_extract(body,'$.${o.channel==='order'?'orderUnit':'customerUnit'}'),'件')=?`).bind(i.qty,i.id,i.price,i.qty,i.unit??'件'),guard(batch+'-'+index));}statements.push(db.prepare('INSERT INTO order_records VALUES(?,?,?,?)').bind(o.id,requestId,JSON.stringify(o),1),db.prepare('DELETE FROM mutation_guards WHERE id LIKE ?').bind(batch+'%'));await db.batch(statements);},
@@ -44,7 +53,7 @@ export async function handleBackstage(request:Request,db:D1Database,config:Acces
   if(path==='/api/logout'&&method==='POST'){await revoke(request,db);return reply(200,{ok:true});}
   if(path==='/api/products'&&method==='GET'){const key=url.searchParams.get('channel')==='order'?'orderVisible':'customerVisible';return reply(200,(await repo.products()).filter(p=>p[key]).map(({orderPrice,orderUnit,customerUnit,...p})=>({...p,price:key==='orderVisible'?orderPrice:p.price,unit:key==='orderVisible'?orderUnit:customerUnit})));}
   if(path==='/api/admin/products'&&method==='GET')return reply(200,await repo.products());
-  if(path==='/api/admin/products'&&method==='POST')return reply(201,await repo.addProduct({...validateProduct(b),id:'p-'+crypto.randomUUID(),revision:1}));
+  if(path==='/api/admin/products'&&method==='POST')return reply(201,await repo.addProduct({...validateProduct(b),revision:1}));
   if(path.startsWith('/api/admin/products/')&&method==='PATCH'){const p=await repo.product(decodeURIComponent(path.split('/').at(-1)!));if(b.revision!==p.revision)fail(409,'商品已更新，請重新整理');return reply(200,await repo.updateProduct({...p,...validateProduct({...b,orderPrice:b.orderPrice??p.orderPrice,orderUnit:b.orderUnit??p.orderUnit,customerUnit:b.customerUnit??p.customerUnit})}));}
   if(path==='/api/orders'&&method==='POST'){
    const channel=b.channel==='order'?'order':'customer';

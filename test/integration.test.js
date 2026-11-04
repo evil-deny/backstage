@@ -22,7 +22,7 @@ test('共用商品、訂單與庫存完整流程',async t=>{
  let p;
  await t.test('197 項真實商品；兩入口可獨立隱藏與還原',async()=>{
   assert.equal((await request('/api/admin/products')).data.length,197);
-  const r=await request('/api/admin/products','POST',{name:'測試商品',category:'測試',type:'豆製品',storage:'冷藏',image:'',price:100,stock:5,orderVisible:true,customerVisible:true});assert.equal(r.status,201);p=r.data;
+  const r=await request('/api/admin/products','POST',{name:'測試商品',category:'測試',type:'豆製品',storage:'冷藏',image:'',price:100,stock:5,orderVisible:true,customerVisible:true});assert.equal(r.status,201);p=r.data;assert.equal(p.id,'p198');
   assert.equal((await request('/api/admin/products/'+p.id,'PATCH',{...p,price:-1})).status,400);
   const next=await request('/api/admin/products/'+p.id,'PATCH',{...p,customerVisible:false});assert.equal(next.status,200);
   assert.equal((await request('/api/products?channel=customer')).data.some(x=>x.id===p.id),false);assert.equal((await request('/api/products?channel=order')).data.some(x=>x.id===p.id),true);

@@ -1,4 +1,5 @@
 import http from 'node:http';
+import {catalogOrder} from './public/catalog-order.js';
 import { DatabaseSync } from 'node:sqlite';
 import { randomBytes, randomUUID, timingSafeEqual, createHash } from 'node:crypto';
 import { readFileSync, mkdirSync } from 'node:fs';
@@ -17,7 +18,7 @@ export function createApp({dbPath=process.env.DB_PATH||join(ROOT,'data','backsta
  const sessions=new Map(),attempts=new Map();
  if(!db.prepare('SELECT id FROM products LIMIT 1').get())for(const p of JSON.parse(readFileSync(join(ROOT,'data','catalog.json'),'utf8')))db.prepare('INSERT INTO products VALUES(?,?)').run(p.id,JSON.stringify(p));
  const decodeProduct=body=>{const p=JSON.parse(body);return {...p,orderPrice:p.orderPrice??p.price,orderUnit:p.orderUnit??'件',customerUnit:p.customerUnit??'件'};};
- const products=()=>db.prepare('SELECT body FROM products').all().map(r=>decodeProduct(r.body));
+ const products=()=>db.prepare('SELECT body FROM products').all().map(r=>decodeProduct(r.body)).sort(catalogOrder);
  const orders=()=>db.prepare('SELECT body FROM orders ORDER BY rowid DESC').all().map(r=>JSON.parse(r.body));
  const product=id=>{const row=db.prepare('SELECT body FROM products WHERE id=?').get(id);return row?decodeProduct(row.body):fail(404,'找不到商品');};
  const order=id=>{const row=db.prepare('SELECT body FROM orders WHERE id=?').get(id);return row?JSON.parse(row.body):fail(404,'找不到訂單');};
@@ -52,7 +53,10 @@ export function createApp({dbPath=process.env.DB_PATH||join(ROOT,'data','backsta
    if(path==='/api/logout'&&req.method==='POST'){sessions.delete(token);return reply(200,{ok:true},{'Set-Cookie':'session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0'});}
    if(path==='/api/products'&&req.method==='GET'){const channel=url.searchParams.get('channel')==='order'?'order':'customer';return reply(200,products().filter(p=>p[channel+'Visible']).map(({orderPrice,orderUnit,customerUnit,...p})=>({...p,price:channel==='order'?orderPrice:p.price,unit:channel==='order'?orderUnit:customerUnit})));}
    if(path==='/api/admin/products'&&req.method==='GET')return reply(200,products());
-   if(path==='/api/admin/products'&&req.method==='POST'){const p={...checkProduct(body),id:'p-'+randomUUID(),revision:0};saveProduct(p);return reply(201,product(p.id));}
+   if(path==='/api/admin/products'&&req.method==='POST')return reply(201,transaction(()=>{
+    const next=db.prepare("SELECT COALESCE(MAX(CAST(substr(id,2) AS INTEGER)),0)+1 AS n FROM products WHERE id GLOB 'p[0-9]*' AND substr(id,2) NOT GLOB '*[^0-9]*'").get().n;
+    const p={...checkProduct(body),id:'p'+next,revision:0};saveProduct(p);return product(p.id);
+   }));
    if(path.startsWith('/api/admin/products/')&&req.method==='PATCH')return reply(200,transaction(()=>{const p=product(decodeURIComponent(path.split('/').at(-1)));if(body.revision!==p.revision)fail(409,'此商品已在其他視窗更新，請重新整理後編輯');saveProduct({...p,...checkProduct({...body,orderPrice:body.orderPrice??p.orderPrice,orderUnit:body.orderUnit??p.orderUnit,customerUnit:body.customerUnit??p.customerUnit})});return product(p.id);}));
    if(path==='/api/orders'&&req.method==='POST')return reply(201,transaction(()=>{
     const requestId=text(body.requestId,80),existing=db.prepare('SELECT body FROM orders WHERE request_id=?').get(requestId);if(existing){const o=JSON.parse(existing.body);return {id:o.id,total:o.total,market:o.market};}
@@ -79,7 +83,7 @@ export function createApp({dbPath=process.env.DB_PATH||join(ROOT,'data','backsta
    if(path==='/api/health'&&req.method==='GET')return reply(200,{ok:true});
    if(path.startsWith('/api/'))fail(404,'找不到 API');
    if(!['GET','HEAD'].includes(req.method))fail(405,'不支援的操作');
-   const files={'/':'index.html','/order':'shop.html','/customer':'shop.html','/app.js':'app.js','/shop.js':'shop.js','/order-display.js':'order-display.js','/metrics.js':'metrics.js','/style.css':'style.css','/logo.jpg':'logo.jpg'};const file=files[path];if(!file)fail(404,'找不到頁面');
+   const files={'/':'index.html','/order':'shop.html','/customer':'shop.html','/app.js':'app.js','/shop.js':'shop.js','/order-display.js':'order-display.js','/metrics.js':'metrics.js','/catalog-order.js':'catalog-order.js','/style.css':'style.css','/logo.jpg':'logo.jpg'};const file=files[path];if(!file)fail(404,'找不到頁面');
    const data=readFileSync(join(ROOT,'public',file)),mime={'html':'text/html','js':'text/javascript','css':'text/css','jpg':'image/jpeg'}[file.split('.').at(-1)];
    res.writeHead(200,{'Content-Type':mime+'; charset=utf-8','Cache-Control':'no-cache','X-Content-Type-Options':'nosniff','Referrer-Policy':'same-origin','Content-Security-Policy':"default-src 'self'; img-src 'self' https: data:; style-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"});res.end(req.method==='HEAD'?undefined:data);
   }catch(e){if(!e.status)console.error(e);if(!res.headersSent)reply(e.status||500,{error:e.status?e.message:'伺服器發生錯誤，請稍後再試'});else res.end();}
