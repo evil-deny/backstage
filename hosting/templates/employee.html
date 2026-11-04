@@ -280,7 +280,7 @@
   <script src="/cloud-sync.js"></script>
   <script type="module">
     import {orderLabel,sourceLabel,sourceClass} from "/order-display.js";
-    import {catalogOrder} from "/catalog-order.js";
+    import {catalogOrder,catalogGroups} from "/catalog-order.js";
     await FuyuanCloud.ready;
     document.addEventListener("keydown",e=>{if(e.target.matches("[data-image-open]")&&["Enter"," "].includes(e.key)){e.preventDefault();e.target.click();}});
     const PRODUCTS=await FuyuanCloud.loadProducts('order');
@@ -442,9 +442,8 @@
       return `<h3>${attrText(title)}</h3><span class="item-spec">${specs.map(attrText).join(/[=＝]/.test(name)?" = ":" · ")}</span>`;
     }
     function renderProducts(){
-      const grouped=new Map();
-      visibleProducts().forEach(p=>{ const label=productGroupLabel(p); if(!grouped.has(label)) grouped.set(label,[]); grouped.get(label).push(p); });
-      document.getElementById("productList").innerHTML=[...grouped.entries()].map(([category,items])=>`
+      const grouped=catalogGroups(visibleProducts(),productGroupLabel);
+      document.getElementById("productList").innerHTML=grouped.map(([category,items])=>`
         <section class="category"><div class="category-title"><span>${attrText(category)}</span><span class="category-count">${items.length} 項</span></div><div class="items">
         ${items.map(p=>`<article class="item ${standardCart[p.id]?'selected':''}"><div class="item-media"><img src="${attrText(p.image||PLACEHOLDER)}" alt="${attrText(p.name)}" loading="lazy" data-image-open="${attrText(p.image||PLACEHOLDER)}" data-image-name="${attrText(p.name)}" tabindex="0" role="button" aria-label="放大 ${attrText(p.name)} 商品圖片" onerror="this.src='${PLACEHOLDER}'">${state.stock[p.id]===null?"":`<span class="stock">庫存 ${state.stock[p.id]}</span>`}</div><div class="item-heading"><div class="item-name">${productNameMarkup(p.name)}</div><div class="item-price"><span>批發價</span><strong>${p.price===0?"時價":money(p.price)}<small>／${attrText(p.unit??"件")}</small></strong></div></div><div class="qty"><button type="button" data-minus="${p.id}" aria-label="減少 ${attrText(p.name)} 數量">−</button><input id="qty-${p.id}" type="number" min="0" value="${standardCart[p.id] || 0}" inputmode="numeric" data-qty="${p.id}" aria-label="${attrText(p.name)} 數量"><button type="button" data-plus="${p.id}" aria-label="增加 ${attrText(p.name)} 數量">＋</button></div></article>`).join("")}
         </div></section>`).join("") || `<div class="empty">找不到品項。</div>`;

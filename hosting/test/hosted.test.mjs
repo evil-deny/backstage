@@ -8,7 +8,7 @@ mkdirSync('.sites-runtime/test',{recursive:true});
 await build({entryPoints:['lib/backstage.ts'],bundle:true,platform:'node',format:'esm',outfile:'.sites-runtime/test/backstage.mjs'});
 const {handleBackstage}=await import('../.sites-runtime/test/backstage.mjs');
 const {analyze}=await import('../public/metrics.js');
-const {catalogOrder}=await import('../public/catalog-order.js');
+const {catalogOrder,catalogGroups}=await import('../public/catalog-order.js');
 await build({entryPoints:['lib/google-access.ts'],bundle:true,platform:'node',format:'esm',outfile:'.sites-runtime/test/access.mjs'});
 const {pkce,digest}=await import('../.sites-runtime/test/access.mjs');
 const config={ADMIN_EMAILS:'owner@example.test',GOOGLE_CLIENT_ID:'test-client.apps.googleusercontent.com'};
@@ -208,7 +208,7 @@ test('顧客送出的訂單出現在同一份員工待出貨清單並可揀貨�
  result=await request('/api/staff/orders/'+order.id,'PATCH',{revision:order.revision,action:'return',items:[{id:p.id,qty:1}]},false);assert.equal(result.status,200);assert.equal((await request('/api/admin/products')).data.find(x=>x.id===p.id).stock,p.stock);
 });
 
-test('新增品項原子接續固定編號，隱藏與改分類不改號，三個目錄自動排入原有類別',async()=>{
+test('新增品項原子接續固定編號，隱藏與改分類不改號，三個目錄按商品編號排序',async()=>{
  const original=(await request('/api/admin/products')).data;
  const next=Math.max(...original.filter(p=>/^p\d+$/.test(p.id)).map(p=>Number(p.id.slice(1))))+1;
  const body={name:'排序測試湯10',category:'測試',type:'湯品/鍋物',storage:'冷凍',image:'',price:10,stock:null,orderVisible:true,customerVisible:true};
@@ -222,23 +222,23 @@ test('新增品項原子接續固定編號，隱藏與改分類不改號，三�
  const c=(await request('/api/admin/products','POST',{...body,name:'排序測試冷藏',storage:'冷藏'})).data;assert.equal(c.id,'p'+(next+2));
  const d=(await request('/api/admin/products','POST',{...body,name:'排序測試新分類',type:'新增類別'})).data;assert.equal(d.id,'p'+(next+3));
  a=(await request('/api/admin/products/'+a.id,'PATCH',{...a,orderVisible:true,customerVisible:true})).data;
- const expected=[b.id,a.id,d.id,c.id];
+ const expected=[a.id,b.id,c.id,d.id];
  for(const path of ['/api/admin/products','/api/products?channel=order','/api/products?channel=customer']){
   const all=(await request(path)).data;assert.deepEqual(all.filter(p=>p.name.startsWith('排序測試')).map(p=>p.id),expected);
-  const before=all.findIndex(p=>p.id===b.id),after=all.findIndex(p=>p.id===a.id);assert.ok(before<after);
+  const before=all.findIndex(p=>p.id===b.id),after=all.findIndex(p=>p.id===a.id);assert.ok(after<before);
  }
  const moved=(await request('/api/admin/products/'+b.id,'PATCH',{...b,storage:'乾貨',type:'醬料'})).data;assert.equal(moved.id,b.id);
- const reordered=(await request('/api/admin/products')).data;assert.deepEqual(reordered.filter(p=>p.name.startsWith('排序測試')).map(p=>p.id),[a.id,d.id,c.id,b.id]);
+ const reordered=(await request('/api/admin/products')).data;assert.deepEqual(reordered.filter(p=>p.name.startsWith('排序測試')).map(p=>p.id),expected);
  // Existing products keep their stable identifiers and remain addressable after insertion.
  for(const p of original){const saved=reordered.find(x=>x.id===p.id);assert.ok(saved);assert.equal(saved.name,p.name);}
- // Original category outranks storage; company dry goods precede supplier frozen goods.
+ // Category edits preserve both the product number and its position in the catalog.
  const categoryMoved=(await request('/api/admin/products/'+b.id,'PATCH',{...moved,category:'公司庫存'})).data;assert.equal(categoryMoved.id,b.id);
  for(const endpoint of ['/api/admin/products','/api/products?channel=order','/api/products?channel=customer']){
-  const rows=(await request(endpoint)).data;assert.deepEqual(rows.filter(p=>p.name.startsWith('排序測試')).map(p=>p.id),[b.id,a.id,d.id,c.id]);
+  const rows=(await request(endpoint)).data;assert.deepEqual(rows.filter(p=>p.name.startsWith('排序測試')).map(p=>p.id),expected);
  }
 });
 
-test('分類優先，再保存方式、類別及商品名稱；同保存類別不跨原本分類混排',()=>{
+test('商品編號為第一順位，使用數字順序且分組不打亂順序',()=>{
  const sample=[
   {id:'p1',category:'兩天一次(三五日結單/一四六到貨)',storage:'冷凍',type:'湯品/鍋物',name:'湯2'},
   {id:'p2',category:'公司庫存',storage:'乾貨',type:'醬料',name:'醬油'},
@@ -247,6 +247,9 @@ test('分類優先，再保存方式、類別及商品名稱；同保存類別�
   {id:'p5',category:'公司庫存',storage:'冷凍',type:'丸類/火鍋料',name:'丸子'},
   {id:'p6',category:'新增分類',storage:'冷凍',type:'湯品/鍋物',name:'湯1'},
  ];
- assert.deepEqual(sample.sort(catalogOrder).map(p=>p.id),['p4','p3','p5','p2','p1','p6']);
- for(const template of ['employee','customer'])assert.match(readFileSync('templates/'+template+'.html','utf8'),/category\s*\|\|/);
+ assert.deepEqual(sample.sort(catalogOrder).map(p=>p.id),['p1','p2','p3','p4','p5','p6']);
+ const numbered=[{id:'p10',category:'甲'},{id:'p2',category:'乙'},{id:'p1',category:'甲'},{id:'p-legacy',category:'甲'}].sort(catalogOrder);
+ assert.deepEqual(numbered.map(p=>p.id),['p1','p2','p10','p-legacy']);
+ const groups=catalogGroups(numbered,p=>p.category);assert.equal(groups.length,3);assert.deepEqual(groups.flatMap(([,items])=>items).map(p=>p.id),['p1','p2','p10','p-legacy']);
+ for(const template of ['employee','customer'])assert.match(readFileSync('templates/'+template+'.html','utf8'),/catalogGroups\(/);
 });
