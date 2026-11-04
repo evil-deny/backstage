@@ -226,6 +226,8 @@
 .order-source.customer{color:#166534;background:#f0fdf4;border-color:#bbf7d0}
 
 .short-order{font-size:.8em;color:#52645c;font-weight:600;margin:0 8px}.order-sync{display:flex;align-items:center;justify-content:flex-end;gap:12px;margin:0 0 12px;font-size:14px;color:#64748b}.order-sync button{min-height:38px;font-size:16px}
+
+.product-code{display:block;font-size:14px;font-weight:700;color:#527568;line-height:1.5;margin-top:4px}
 </style>
 </head>
 <body>
@@ -317,7 +319,7 @@
       const deleted=state.deletedProductIds||[];
       return [...PRODUCTS,...(state.customProducts||[])].filter(p=>p.orderVisible!==false && !deleted.includes(p.id)).map(p=>product(p.id));
     }
-    function itemName(item){ return attrText(item.name || product(item.id).name); }
+    function itemName(item){ return attrText((item.code?item.code+" ":"")+(item.name || product(item.id).name)); }
     function itemPrice(item){ return Number.isFinite(item.price) ? item.price : product(item.id).price; }
     function itemUnit(item){ return attrText(item.unit??"件"); }
     function itemSubtotal(item){ return itemPrice(item) * item.qty; }
@@ -325,7 +327,7 @@
     function closeModal(id){ document.getElementById(id).classList.remove("show"); }
 
     function cartItems(){
-      const standard = activeProducts().map(p => ({id:p.id,name:p.name,price:p.price,unit:p.unit??"件",qty:Number(standardCart[p.id] || 0),custom:false})).filter(i => i.qty > 0);
+      const standard = activeProducts().map(p => ({id:p.id,name:p.name,code:p.code,price:p.price,unit:p.unit??"件",qty:Number(standardCart[p.id] || 0),custom:false})).filter(i => i.qty > 0);
       return [...standard, ...customCart.map(i => ({...i}))];
     }
     function orderTotal(order){ return order.items.reduce((sum,i)=>sum+itemSubtotal(i),0); }
@@ -445,7 +447,7 @@
       const grouped=catalogGroups(visibleProducts(),productGroupLabel);
       document.getElementById("productList").innerHTML=grouped.map(([category,items])=>`
         <section class="category"><div class="category-title"><span>${attrText(category)}</span><span class="category-count">${items.length} 項</span></div><div class="items">
-        ${items.map(p=>`<article class="item ${standardCart[p.id]?'selected':''}"><div class="item-media"><img src="${attrText(p.image||PLACEHOLDER)}" alt="${attrText(p.name)}" loading="lazy" data-image-open="${attrText(p.image||PLACEHOLDER)}" data-image-name="${attrText(p.name)}" tabindex="0" role="button" aria-label="放大 ${attrText(p.name)} 商品圖片" onerror="this.src='${PLACEHOLDER}'">${state.stock[p.id]===null?"":`<span class="stock">庫存 ${state.stock[p.id]}</span>`}</div><div class="item-heading"><div class="item-name">${productNameMarkup(p.name)}</div><div class="item-price"><span>批發價</span><strong>${p.price===0?"時價":money(p.price)}<small>／${attrText(p.unit??"件")}</small></strong></div></div><div class="qty"><button type="button" data-minus="${p.id}" aria-label="減少 ${attrText(p.name)} 數量">−</button><input id="qty-${p.id}" type="number" min="0" value="${standardCart[p.id] || 0}" inputmode="numeric" data-qty="${p.id}" aria-label="${attrText(p.name)} 數量"><button type="button" data-plus="${p.id}" aria-label="增加 ${attrText(p.name)} 數量">＋</button></div></article>`).join("")}
+        ${items.map(p=>`<article class="item ${standardCart[p.id]?'selected':''}"><div class="item-media"><img src="${attrText(p.image||PLACEHOLDER)}" alt="${attrText(p.name)}" loading="lazy" data-image-open="${attrText(p.image||PLACEHOLDER)}" data-image-name="${attrText(p.name)}" tabindex="0" role="button" aria-label="放大 ${attrText(p.name)} 商品圖片" onerror="this.src='${PLACEHOLDER}'">${state.stock[p.id]===null?"":`<span class="stock">庫存 ${state.stock[p.id]}</span>`}</div><div class="item-heading"><div class="item-name">${productNameMarkup(p.name)}<small class="product-code">${attrText(p.code||p.id)}</small></div><div class="item-price"><span>批發價</span><strong>${p.price===0?"時價":money(p.price)}<small>／${attrText(p.unit??"件")}</small></strong></div></div><div class="qty"><button type="button" data-minus="${p.id}" aria-label="減少 ${attrText(p.name)} 數量">−</button><input id="qty-${p.id}" type="number" min="0" value="${standardCart[p.id] || 0}" inputmode="numeric" data-qty="${p.id}" aria-label="${attrText(p.name)} 數量"><button type="button" data-plus="${p.id}" aria-label="增加 ${attrText(p.name)} 數量">＋</button></div></article>`).join("")}
         </div></section>`).join("") || `<div class="empty">找不到品項。</div>`;
       updateTotal();
     }

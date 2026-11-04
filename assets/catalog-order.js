@@ -5,7 +5,8 @@ export const TYPE_ORDER=['湯品/鍋物','丸類/火鍋料','素肉/調理肉品
 const rank=(list,value)=>{const index=list.indexOf(value);return index<0?list.length:index;};
 const compare=(a,b)=>String(a??'').localeCompare(String(b??''),'zh-Hant',{numeric:true});
 export function catalogOrder(a,b){
- return Number(!/^p\d+$/.test(a.id))-Number(!/^p\d+$/.test(b.id))
+ return (a.displayNumber??Number.MAX_SAFE_INTEGER)-(b.displayNumber??Number.MAX_SAFE_INTEGER)
+  || Number(!/^p\d+$/.test(a.id))-Number(!/^p\d+$/.test(b.id))
   || compare(a.id,b.id)
   || rank(CATEGORY_ORDER,a.category)-rank(CATEGORY_ORDER,b.category)
   || compare(a.category,b.category)

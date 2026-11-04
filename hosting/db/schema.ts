@@ -6,6 +6,7 @@ export const inventory=sqliteTable('inventory',{
 },t=>[check('stock_nonnegative',sql`${t.stock} IS NULL OR ${t.stock} >= 0`),check('price_nonnegative',sql`${t.price} >= 0`),check('order_price_nonnegative',sql`${t.orderPrice} IS NULL OR ${t.orderPrice} >= 0`)]);
 export const orders=sqliteTable('order_records',{id:text('id').primaryKey(),requestId:text('request_id').notNull().unique(),body:text('body').notNull(),revision:integer('revision').notNull()});
 export const guards=sqliteTable('mutation_guards',{id:text('id').primaryKey(),ok:integer('ok').notNull()},t=>[check('mutation_must_succeed',sql`${t.ok} = 1`)]);
+export const catalogState=sqliteTable('catalog_state',{id:text('id').primaryKey(),revision:integer('revision').notNull().default(0)});
 // Google grants are bound to the verified subject, administrator email and client ID.
 // The legacy default makes all previously issued ChatGPT grants ineligible.
 export const apiGrants=sqliteTable('api_grants',{hash:text('hash').primaryKey(),expires:integer('expires').notNull(),provider:text('provider').notNull().default('chatgpt'),subject:text('subject'),email:text('email'),audience:text('audience')});
