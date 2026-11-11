@@ -271,6 +271,6 @@ test('管理員刪除與還原訂單：預留庫存只回補一次，歷史銷�
  o=await place('delete-shipped');o=(await patch(o,'ship')).data;o=(await patch(o,'return',{items:[{id:p.id,qty:1}]})).data;
  o=(await patch(o,'archive')).data;const archived=o.archivedAt,before=analyze((await request('/api/admin/orders')).data);
  o=(await patch(o,'delete')).data;assert.equal(await stock(),9);assert.equal(o.status,'returned');assert.equal(o.returns.length,1);
- const after=analyze((await request('/api/admin/orders')).data);assert.equal(after.revenue,before.revenue);assert.equal(after.returned,before.returned);
- o=(await patch(o,'restoreOrder')).data;assert.equal(o.archivedAt,archived);assert.equal(await stock(),9);
+ const after=analyze((await request('/api/admin/orders')).data);assert.equal(after.revenue,before.revenue-20);assert.equal(after.returned,before.returned-1);
+ o=(await patch(o,'restoreOrder')).data;assert.equal(o.archivedAt,archived);assert.equal(await stock(),9);assert.deepEqual(analyze((await request('/api/admin/orders')).data),before);
 });
