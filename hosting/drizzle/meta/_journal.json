@@ -50,6 +50,13 @@
       "when": 1793823255619,
       "tag": "0006_graceful_baron_strucker",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1794394341282,
+      "tag": "0007_old_jackpot",
+      "breakpoints": true
     }
   ]
 }

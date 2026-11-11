@@ -11,6 +11,7 @@ export const billingState=sqliteTable('billing_state',{id:text('id').primaryKey(
 export const billingInvoices=sqliteTable('billing_invoices',{id:text('id').primaryKey(),body:text('body').notNull()});
 export const billingClaims=sqliteTable('billing_claims',{orderId:text('order_id').primaryKey(),invoiceId:text('invoice_id').notNull()});
 export const billingManualReturns=sqliteTable('billing_manual_returns',{id:text('id').primaryKey(),body:text('body').notNull()});
+export const billingPeople=sqliteTable('billing_people',{key:text('key').primaryKey(),body:text('body').notNull()});
 // Google grants are bound to the verified subject, administrator email and client ID.
 // The legacy default makes all previously issued ChatGPT grants ineligible.
 export const apiGrants=sqliteTable('api_grants',{hash:text('hash').primaryKey(),expires:integer('expires').notNull(),provider:text('provider').notNull().default('chatgpt'),subject:text('subject'),email:text('email'),audience:text('audience')});

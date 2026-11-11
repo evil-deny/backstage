@@ -26,11 +26,11 @@ export function buildBill(input,orders,products,bills,manualReturns=[]){
  }));
  if(!Array.isArray(input.manualItems)||input.manualItems.length>100)invalid('手填品項格式錯誤');
  const manualItems=input.manualItems.map(i=>{if(!i||typeof i.name!=='string'||!i.name.trim()||i.name.length>120||typeof i.qty!=='number'||!Number.isFinite(i.qty)||i.qty<=0||i.qty>1e6||Math.abs(i.qty*1000-Math.round(i.qty*1000))>.00001)invalid('手填品項請填寫名稱與有效數量（最多三位小數）');const unitPriceCents=cents(i.price);if(typeof i.unit!=='string'||!i.unit.trim()||i.unit.length>20)invalid('請填寫手填品項單位');return {name:i.name.trim(),qty:i.qty,unit:i.unit.trim(),unitPriceCents,grossCents:Math.round(i.qty*unitPriceCents)};});
- const rentCents=cents(input.rent),goodsCents=lines.reduce((s,i)=>s+i.grossCents,0),manualCents=manualItems.reduce((s,i)=>s+i.grossCents,0),chargesCents=goodsCents+manualCents+rentCents;
+ const rentCents=cents(input.rent),utilitiesCents=cents(input.utilities??0),goodsCents=lines.reduce((s,i)=>s+i.grossCents,0),manualCents=manualItems.reduce((s,i)=>s+i.grossCents,0),chargesCents=goodsCents+manualCents+rentCents+utilitiesCents;
  if(!Number.isSafeInteger(chargesCents)||chargesCents>1e12)invalid('結帳總額超過上限');
- if(!chosen.length&&!manualItems.length&&!rentCents)invalid('此日沒有未結帳的已出貨訂單，請加入手填品項或租金');
+ if(!chosen.length&&!manualItems.length&&!rentCents&&!utilitiesCents)invalid('此日沒有未結帳的已出貨訂單，請加入手填品項、租金或廠電費');
  const available=returnCredits(orders,bills,person,lines,manualReturns);let remaining=chargesCents;
  const credits=available.filter(c=>c.remainingCents>0).map(c=>{const appliedCents=Math.min(remaining,c.remainingCents);remaining-=appliedCents;return {...c,appliedCents};}).filter(c=>c.appliedCents>0);
  const availableCreditCents=available.reduce((s,c)=>s+c.remainingCents,0),creditCents=chargesCents-remaining;
- return {person,date,orders:chosen.map(o=>({id:o.id,revision:o.revision})),lines,manualItems,rentCents,goodsCents,manualCents,chargesCents,credits,creditCents,payableCents:remaining,carryCents:availableCreditCents-creditCents};
+ return {person,date,orders:chosen.map(o=>({id:o.id,revision:o.revision})),lines,manualItems,rentCents,utilitiesCents,goodsCents,manualCents,chargesCents,credits,creditCents,payableCents:remaining,carryCents:availableCreditCents-creditCents};
 }

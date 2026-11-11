@@ -67,7 +67,7 @@ function csv(name,rows){const cell=v=>'"'+String(typeof v==='string'&&/^[=+\-@\t
 async function run(fn){try{await fn();}catch(e){toast(e.message);}}
 $('refresh').onclick=()=>run(refresh);$('logout').onclick=()=>run(async()=>{await FuyuanCloud.signOut();products=[];orders=[];showLogin();});
 const billing=initBilling({api,ask,toast,getOrders:()=>orders,getProducts:()=>[...products,...deletedProducts],refresh,run,csv});
-const views={billing:['批發結帳','每日批發貨款、時價品項與租金，一張單清楚結帳。'],refunds:['退貨抵扣','查看退貨金額與下次結帳可抵扣的餘額。'],overview:['營運總覽','從每一份訂單，看見生意的變化。'],products:['商品管理','一份商品目錄，同步管理兩個訂購入口。'],orders:['訂單管理','從接單、出貨到退貨，掌握每一筆進度。'],analytics:['商品分析','把銷售紀錄，變成下一次備貨的依據。']};
+const views={billing:['批發結帳','每日批發貨款、時價品項、租金與廠電費，一張單清楚結帳。'],refunds:['退貨抵扣','查看退貨金額與下次結帳可抵扣的餘額。'],overview:['營運總覽','從每一份訂單，看見生意的變化。'],products:['商品管理','一份商品目錄，同步管理兩個訂購入口。'],orders:['訂單管理','從接單、出貨到退貨，掌握每一筆進度。'],analytics:['商品分析','把銷售紀錄，變成下一次備貨的依據。']};
 document.addEventListener('click',e=>run(async()=>{const b=e.target.closest('button');if(!b)return;if(b.dataset.view){view=b.dataset.view;for(const key of Object.keys(views))$(key+'View').hidden=key!==view;document.querySelectorAll('nav button').forEach(el=>el.classList.toggle('active',el.dataset.view===view));[$('pageTitle').textContent,$('pageDescription').textContent]=views[view];}
  if(b.dataset.image){const p=[...products,...deletedProducts].find(p=>p.id===b.dataset.image);$('imageDialogTitle').textContent=p.name;$('productImagePreview').src=p.image||PRODUCT_FALLBACK;$('productImagePreview').alt=p.name;$('imageDialog').showModal();}
  if(b.dataset.close)$(b.dataset.close).close();if(b.dataset.edit)edit(products.find(p=>p.id===b.dataset.edit));

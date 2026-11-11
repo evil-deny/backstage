@@ -72,7 +72,7 @@ export async function handleBackstage(request:Request,db:D1Database,config:Acces
   if(path==='/api/logout'&&method==='POST'){await revoke(request,db);return reply(200,{ok:true});}
   if(path==='/api/products'&&method==='GET'){const key=url.searchParams.get('channel')==='order'?'orderVisible':'customerVisible';return reply(200,(await repo.products()).filter(p=>p[key]).map(({orderPrice,orderUnit,customerUnit,...p})=>({...p,price:key==='orderVisible'?orderPrice:p.price,unit:key==='orderVisible'?orderUnit:customerUnit})));}
   if(path==='/api/admin/catalog'&&method==='GET')return reply(200,await repo.layout());
-  if(path==='/api/admin/billing'||path==='/api/admin/billing/paid'||path==='/api/admin/billing/manual-return')return reply(200,await billingAction(db,path,method,b,await repo.orders(),await repo.products(true)));
+  if(path==='/api/admin/billing'||path.startsWith('/api/admin/billing/'))return reply(200,await billingAction(db,path,method,b,await repo.orders(),await repo.products(true)));
   if(path.startsWith('/api/admin/catalog/')&&method==='POST'){
    const current=await repo.layout();if(b.revision!==current.revision)fail(409,'商品目錄已更新，請重新整理');
    if(path==='/api/admin/catalog/reorder'){

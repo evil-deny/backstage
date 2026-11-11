@@ -5,6 +5,7 @@ import {mkdirSync,readdirSync,readFileSync} from 'node:fs';
 import {build} from 'esbuild';
 import {createHash} from 'node:crypto';
 import {billingDay,buildBill,returnCredits} from '../public/billing-model.js';
+import {billImageRows} from '../public/billing-image.js';
 mkdirSync('.sites-runtime/test',{recursive:true});
 await build({entryPoints:['lib/backstage.ts'],bundle:true,platform:'node',format:'esm',outfile:'.sites-runtime/test/billing-handler.mjs'});
 const {handleBackstage}=await import('../.sites-runtime/test/billing-handler.mjs');
@@ -63,4 +64,41 @@ test('台灣跨日、未出貨／取消排除，舊分類回填與單品仍可�
  assert.throws(()=>buildBill({...body,date:'2026-11-04'},[o],[],[]),/沒有未結帳/);
  for(const status of ['new','picking','cancelled'])assert.throws(()=>buildBill(body,[{...o,status}],[],[]),/沒有未結帳/);
  assert.throws(()=>buildBill({...body,date:'2026-02-30'},[o],[],[]),/有效結帳日期/);
+});
+
+test('刪除批發人與結帳紀錄可還原，保留價格、收款、訂單認列及退貨抵扣',async()=>{
+ const state=async()=>(await request('/api/admin/billing')).data;
+ const action=async(name,body={})=>request('/api/admin/billing/'+name,'POST',{revision:(await state()).revision,requestId:'delete-restore-'+(++counter),...body});
+ for(const name of ['delete-person','restore-person','delete-invoice','restore-invoice'])assert.equal((await request('/api/admin/billing/'+name,'POST',{},false)).status,401);
+ let before=await state();const original=before.bills.find(b=>b.paidAt);assert.ok(original);
+ const originalOrders=(await request('/api/admin/orders')).data;
+ const creditsBefore=returnCredits(originalOrders,before.bills,original.person,[],before.manualReturns);
+ const result=await action('delete-invoice',{invoiceId:original.id});assert.equal(result.status,200);assert.ok(result.data.deletedAt);assert.equal(result.data.paidAt,original.paidAt);
+ let after=await state();assert.deepEqual(returnCredits(originalOrders,after.bills,original.person,[],after.manualReturns),creditsBefore);
+ assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM billing_claims WHERE invoice_id=?').get(original.id).n,original.orders.length);
+ assert.equal((await action('paid',{invoiceId:original.id})).status,409);assert.equal((await action('delete-invoice',{invoiceId:original.id})).status,409);
+ assert.equal((await action('delete-person',{person:original.person})).status,200);
+ after=await state();assert.equal(after.deletedPeople[0].person.name,original.person.name);
+ assert.equal((await post({person:original.person,rent:10})).status,409);
+ assert.equal((await request('/api/admin/backup')).data.billing.deletedPeople.length,1);
+ assert.equal((await action('restore-person',{person:original.person})).status,200);assert.equal((await state()).deletedPeople.length,0);
+ assert.equal((await action('restore-invoice',{invoiceId:original.id})).status,200);
+ const restored=(await state()).bills.find(b=>b.id===original.id);assert.deepEqual(restored,original);
+ assert.equal((await action('restore-invoice',{invoiceId:original.id})).status,409);
+ assert.deepEqual((await request('/api/admin/orders')).data,originalOrders);
+ const revision=(await state()).revision;
+ const concurrent=await Promise.all(['delete-a','delete-b'].map(requestId=>request('/api/admin/billing/delete-invoice','POST',{revision,requestId,invoiceId:original.id})));assert.deepEqual(concurrent.map(r=>r.status).sort(),[200,409]);
+ assert.equal((await action('restore-invoice',{invoiceId:original.id})).status,200);
+});
+
+test('四項時價品項保留單位，廠電費納入結帳與圖片，舊帳單相容',async()=>{
+ const who={name:'四項時價測試',phone:''},manualItems=[{name:'白豆腐',unit:'板',qty:2,price:100},{name:'炸四角',unit:'籃',qty:1,price:120},{name:'黃干',unit:'包',qty:3,price:50},{name:'Ng干',unit:'包',qty:2,price:30}];
+ let r=await post({person:who,manualItems,rent:100,utilities:25.5});assert.equal(r.status,200);const b=r.data;
+ assert.equal(b.manualCents,53000);assert.equal(b.utilitiesCents,2550);assert.equal(b.payableCents,65550);assert.deepEqual(b.manualItems.map(i=>[i.name,i.unit]),manualItems.map(i=>[i.name,i.unit]));
+ const rows=billImageRows(b);assert.ok(rows.some(r=>r.text==='廠電費'&&r.value==='NT$ 25.5'));assert.ok(rows.some(r=>r.text==='本次應收'&&r.value==='NT$ 655.5'));
+ r=await post({person:who,utilities:10});assert.equal(r.status,200);assert.equal(r.data.payableCents,1000);
+ const legacy={...b};delete legacy.utilitiesCents;assert.ok(billImageRows(legacy).some(r=>r.text==='廠電費'&&r.value==='NT$ 0'));
+ assert.equal((await post({person:who,utilities:-1})).status,400);
+ assert.equal((await post({person:who,utilities:1.001})).status,400);
+ assert.equal((await request('/api/admin/backup')).data.billing.bills.find(i=>i.id===b.id).utilitiesCents,2550);
 });

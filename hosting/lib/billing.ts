@@ -2,8 +2,8 @@ import {buildBill,personKey} from '../public/billing-model.js';
 const fail=(status:number,message:string):never=>{throw Object.assign(new Error(message),{status});};
 export async function billingData(db:D1Database){
  await db.prepare("INSERT OR IGNORE INTO billing_state(id,revision) VALUES('main',0)").run();
- const result=await db.batch([db.prepare("SELECT revision FROM billing_state WHERE id='main'"),db.prepare('SELECT body FROM billing_invoices ORDER BY rowid DESC'),db.prepare('SELECT body FROM billing_manual_returns ORDER BY rowid')]);
- return {revision:Number((result[0].results[0] as any)?.revision??0),bills:result[1].results.map((r:any)=>JSON.parse(r.body)),manualReturns:result[2].results.map((r:any)=>JSON.parse(r.body))};
+ const result=await db.batch([db.prepare("SELECT revision FROM billing_state WHERE id='main'"),db.prepare('SELECT body FROM billing_invoices ORDER BY rowid DESC'),db.prepare('SELECT body FROM billing_manual_returns ORDER BY rowid'),db.prepare('SELECT body FROM billing_people ORDER BY rowid')]);
+ return {revision:Number((result[0].results[0] as any)?.revision??0),bills:result[1].results.map((r:any)=>JSON.parse(r.body)),manualReturns:result[2].results.map((r:any)=>JSON.parse(r.body)),deletedPeople:result[3].results.map((r:any)=>JSON.parse(r.body))};
 }
 export async function billingAction(db:D1Database,path:string,method:string,b:any,orders:any[],products:any[]){
  const data=await billingData(db);
@@ -14,6 +14,7 @@ export async function billingAction(db:D1Database,path:string,method:string,b:an
  const guard=crypto.randomUUID(),statements=[db.prepare("UPDATE billing_state SET revision=revision+1 WHERE id='main' AND revision=?").bind(data.revision),db.prepare('INSERT INTO mutation_guards(id,ok) VALUES(?,changes())').bind(guard)];
  let bill:any;
  if(path==='/api/admin/billing'){
+  if(data.deletedPeople.some(p=>p.key===personKey(b.person)))fail(409,'這位批發人已刪除，請先還原');
   if(data.bills.some(i=>i.id===id))fail(409,'此結帳單已建立，請重新整理查看');
   const current=orders.filter(o=>o.channel==='order'&&personKey(o)===personKey(b.person)).map(o=>({id:o.id,revision:o.revision})).sort((a,b)=>a.id.localeCompare(b.id));
   if(!Array.isArray(b.orderRevisions)||b.orderRevisions.some((o:any)=>!o||typeof o.id!=='string'||!Number.isSafeInteger(o.revision))||JSON.stringify([...b.orderRevisions].sort((a,b)=>String(a.id).localeCompare(String(b.id))))!==JSON.stringify(current))fail(409,'這位批發人的訂單或退貨已更新，請重新整理再確認金額');
@@ -24,6 +25,20 @@ export async function billingAction(db:D1Database,path:string,method:string,b:an
   }
   statements.push(db.prepare('INSERT INTO billing_invoices(id,body) VALUES(?,?)').bind(id,JSON.stringify(bill)));
   for(const o of bill.orders)statements.push(db.prepare('INSERT INTO billing_claims(order_id,invoice_id) VALUES(?,?)').bind(o.id,id));
+ }else if(['/api/admin/billing/delete-person','/api/admin/billing/restore-person'].includes(path)){
+  if(typeof b.person?.name!=='string'||!b.person.name.trim()||b.person.name.length>80||typeof b.person.phone!=='string'||b.person.phone.length>40)fail(400,'請選擇有效批發人');
+  const key=personKey(b.person),existing=data.deletedPeople.find(p=>p.key===key);
+  if(path.endsWith('/delete-person')){
+   if(existing)fail(409,'這位批發人已刪除');
+   if(![...orders.filter(o=>o.channel==='order'),...data.bills.map(i=>i.person)].some(p=>personKey(p)===key))fail(404,'找不到批發人');
+   bill={key,person:{name:b.person.name.trim(),phone:b.person.phone.trim()},deletedAt:new Date().toISOString()};
+   statements.push(db.prepare('INSERT INTO billing_people(key,body) VALUES(?,?)').bind(key,JSON.stringify(bill)));
+  }else{if(!existing)fail(404,'找不到已刪除批發人');bill=existing;statements.push(db.prepare('DELETE FROM billing_people WHERE key=?').bind(key));}
+ }else if(['/api/admin/billing/delete-invoice','/api/admin/billing/restore-invoice'].includes(path)){
+  bill=data.bills.find(i=>i.id===b.invoiceId)??fail(404,'找不到結帳單');
+  if(path.endsWith('/delete-invoice')){if(bill.deletedAt)fail(409,'這筆結帳紀錄已刪除');bill={...bill,deletedAt:new Date().toISOString()};}
+  else{if(!bill.deletedAt)fail(409,'這筆結帳紀錄未刪除');bill={...bill};delete bill.deletedAt;}
+  statements.push(db.prepare('UPDATE billing_invoices SET body=? WHERE id=?').bind(JSON.stringify(bill),bill.id));
  }else if(path==='/api/admin/billing/manual-return'){
   const original=data.bills.find(i=>i.id===b.invoiceId)??fail(404,'找不到原結帳單');
   if(!Number.isSafeInteger(b.lineIndex)||!original.manualItems[b.lineIndex])fail(400,'請選擇原手填品項');
@@ -33,7 +48,7 @@ export async function billingAction(db:D1Database,path:string,method:string,b:an
   bill={id,invoiceId:original.id,lineIndex:b.lineIndex,person:original.person,name:line.name,unit:line.unit,unitPriceCents:line.unitPriceCents,qty:b.qty,amountCents:Math.round((returned+b.qty)*line.unitPriceCents)-Math.round(returned*line.unitPriceCents),date:b.date,createdAt:new Date().toISOString()};
   statements.push(db.prepare('INSERT INTO billing_manual_returns(id,body) VALUES(?,?)').bind(id,JSON.stringify(bill)));
  }else if(path==='/api/admin/billing/paid'){
-  bill=data.bills.find(i=>i.id===b.invoiceId)??fail(404,'找不到結帳單');if(bill.paidAt)fail(409,'此結帳單已收款');bill={...bill,paidAt:new Date().toISOString()};
+  bill=data.bills.find(i=>i.id===b.invoiceId)??fail(404,'找不到結帳單');if(bill.deletedAt)fail(409,'請先還原結帳紀錄');if(bill.paidAt)fail(409,'此結帳單已收款');bill={...bill,paidAt:new Date().toISOString()};
   statements.push(db.prepare('UPDATE billing_invoices SET body=? WHERE id=?').bind(JSON.stringify(bill),bill.id));
  }else fail(404,'找不到結帳操作');
  statements.push(db.prepare('DELETE FROM mutation_guards WHERE id LIKE ?').bind(guard+'%'));
