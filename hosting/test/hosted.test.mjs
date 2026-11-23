@@ -22,6 +22,37 @@ const db={prepare,async batch(statements){sql.exec('BEGIN');try{const results=st
 await db.prepare('INSERT INTO api_grants(hash,expires,provider,subject,email,audience) VALUES(?,?,?,?,?,?)').bind(await digest(adminToken),Date.now()+8*3600000,'google','test-owner','owner@example.test',config.GOOGLE_CLIENT_ID).run();
 async function request(path,method='GET',body,auth=true,origin){const headers={...(auth?{Authorization:'Bearer '+adminToken}:{}),...(body?{'Content-Type':'application/json'}:{}),...(origin?{Origin:origin}:{})};const r=await handleBackstage(new Request('https://site.example'+path,{method,headers,body:body?JSON.stringify(body):undefined}),db,config);return {status:r.status,data:r.status===204?null:await r.json(),headers:r.headers};}
 
+test('員工白名單強制登入、員工不能進管理後台、撤除白名單舊憑證立即失效',async()=>{
+ for(const path of ['/api/staff/access','/api/staff/orders'])assert.equal((await request(path,'GET',undefined,false)).status,401);
+ assert.equal((await request('/api/orders','POST',{channel:'order'},false)).status,401);
+ assert.equal((await request('/api/staff/orders/unknown','PATCH',{},false)).status,401);
+ const worker='c'.repeat(64);await db.prepare('INSERT INTO api_grants(hash,expires,provider,subject,email,audience) VALUES(?,?,?,?,?,?)').bind(await digest(worker),Date.now()+3600000,'google','worker','worker@example.test',config.GOOGLE_CLIENT_ID).run();
+ const access=async(path,cfg)=>handleBackstage(new Request('https://site.example'+path,{headers:{Authorization:'Bearer '+worker}}),db,cfg);
+ const staffConfig={...config,STAFF_EMAILS:'worker@example.test'};
+ assert.equal((await access('/api/staff/access',staffConfig)).status,200);
+ assert.equal((await access('/api/staff/orders',staffConfig)).status,200);
+ assert.equal((await access('/api/admin/orders',staffConfig)).status,401);
+ assert.equal((await access('/api/staff/orders',config)).status,401);
+});
+
+test('管理員可加入與移除員工白名單；我的訂單依驗證帳號隔離',async()=>{
+ const email='history-worker@example.test',token='e'.repeat(64);
+ await db.prepare('INSERT INTO api_grants(hash,expires,provider,subject,email,audience) VALUES(?,?,?,?,?,?)').bind(await digest(token),Date.now()+3600000,'google','history-worker',email,config.GOOGLE_CLIENT_ID).run();
+ const worker=async(path,method='GET',body)=>{const r=await handleBackstage(new Request('https://site.example'+path,{method,headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined}),db,config);return {status:r.status,data:await r.json()};};
+ assert.equal((await worker('/api/staff/access')).status,401);
+ assert.equal((await request('/api/admin/staff','POST',{email})).status,200);
+ assert.equal((await worker('/api/staff/access')).status,200);
+ assert.equal((await worker('/api/admin/staff')).status,401);
+ const o=await worker('/api/orders','POST',{requestId:'history-isolation-order',channel:'order',name:'帳號隔離測試',items:[{id:'custom-isolation',name:'自訂測試',custom:true,price:12,qty:1}]});assert.equal(o.status,201);
+ const own=await worker('/api/staff/my-orders');assert.equal(own.data.length,1);assert.equal(own.data[0].id,o.data.id);
+ assert.equal((await request('/api/staff/my-orders')).data.some(x=>x.id===o.data.id),false);
+ assert.equal((await request('/api/admin/staff/delete','POST',{email:'owner@example.test'})).status,400);
+ assert.equal((await request('/api/admin/staff/delete','POST',{email})).status,200);
+ assert.equal((await worker('/api/staff/my-orders')).status,401);
+ // Remove this fixture before catalog/order count assertions in the legacy suite.
+ sql.prepare('DELETE FROM order_records WHERE id=?').run(o.data.id);
+});
+
 test('批發與顧客單位獨立同步、歷史快照、退貨與分析保持原單位',async()=>{
  const legacy=(await request('/api/products')).data[0];assert.equal(legacy.unit,'件');
  let p=(await request('/api/admin/products','POST',{name:'雙單位測試',category:'測試',type:'豆製品',storage:'冷藏',image:'',price:60,orderPrice:600,orderUnit:'箱',customerUnit:'包',stock:null,orderVisible:true,customerVisible:true})).data;assert.equal(p.id,'p198');
@@ -29,22 +60,22 @@ test('批發與顧客單位獨立同步、歷史快照、退貨與分析保持�
   const pub=(await request('/api/products?channel='+channel)).data.find(x=>x.id===p.id);assert.equal(pub.unit,unit);assert.equal(pub.price,price);assert.equal('orderUnit' in pub,false);assert.equal('customerUnit' in pub,false);
  }
  const payload=(channel,unit)=>({requestId:'units-'+channel,channel,name:'單位測試',phone:'0900000000',items:[{id:p.id,qty:2,price:channel==='order'?600:60,unit}]});
- assert.equal((await request('/api/orders','POST',payload('order','包'),false)).status,409);
- const a=await request('/api/orders','POST',payload('order','箱'),false),b=await request('/api/orders','POST',payload('customer','包'),false);assert.equal(a.status,201);assert.equal(b.status,201);
+ assert.equal((await request('/api/orders','POST',payload('order','包'),true)).status,409);
+ const a=await request('/api/orders','POST',payload('order','箱'),true),b=await request('/api/orders','POST',payload('customer','包'),false);assert.equal(a.status,201);assert.equal(b.status,201);
  p=(await request('/api/admin/products')).data.find(x=>x.id===p.id);p=(await request('/api/admin/products/'+p.id,'PATCH',{...p,orderUnit:'盒',customerUnit:'袋'})).data;
  assert.equal(p.orderUnit,'盒');assert.equal(p.customerUnit,'袋');
  // Old callers that only update visibility must preserve both saved units.
  const {orderUnit,customerUnit,...withoutUnits}=p;p=(await request('/api/admin/products/'+p.id,'PATCH',{...withoutUnits,customerVisible:false})).data;assert.equal(p.orderUnit,'盒');assert.equal(p.customerUnit,'袋');
  for(const unit of ['', 'a'.repeat(21),12])assert.equal((await request('/api/admin/products/'+p.id,'PATCH',{...p,orderUnit:unit})).status,400);
- assert.equal((await request('/api/orders','POST',{...payload('order','箱'),requestId:'units-stale'},false)).status,409);
+ assert.equal((await request('/api/orders','POST',{...payload('order','箱'),requestId:'units-stale'},true)).status,409);
  // A concurrent unit edit after validation is also rejected by the atomic reservation.
  const repo=(await import('../.sites-runtime/test/backstage.mjs')).createRepository(db);
  await assert.rejects(repo.place({id:'unit-race',channel:'order',items:[{id:p.id,qty:1,price:600,unit:'箱'}]},'unit-race'));assert.equal(await repo.findRequest('unit-race'),null);
  const orders=[];
  for(const [result,unit] of [[a,'箱'],[b,'包']]){
-  let o=(await request('/api/staff/orders', 'GET',undefined,false)).data.find(o=>o.id===result.data.id);assert.equal(o.items[0].unit,unit);
-  o=(await request('/api/staff/orders/'+o.id,'PATCH',{revision:o.revision,action:'ship'},false)).data;
-  o=(await request('/api/staff/orders/'+o.id,'PATCH',{revision:o.revision,action:'return',items:[{id:p.id,qty:1}]},false)).data;assert.equal(o.returns[0].unit,unit);orders.push(o);
+  let o=(await request('/api/staff/orders', 'GET',undefined,true)).data.find(o=>o.id===result.data.id);assert.equal(o.items[0].unit,unit);
+  o=(await request('/api/staff/orders/'+o.id,'PATCH',{revision:o.revision,action:'ship'},true)).data;
+  o=(await request('/api/staff/orders/'+o.id,'PATCH',{revision:o.revision,action:'return',items:[{id:p.id,qty:1}]},true)).data;assert.equal(o.returns[0].unit,unit);orders.push(o);
  }
  const metrics=analyze(orders);assert.equal(metrics.rows.length,2);assert.deepEqual(metrics.rows.map(r=>r.unit).sort(),['包','箱']);assert.equal(metrics.revenue,660);assert.ok(metrics.rows.every(r=>r.net===1));
  // Keep independent pre-existing tests' shared fixture unchanged.
@@ -120,8 +151,8 @@ test('顧客免登入送單，員工流程保留揀貨、部分出貨與自訂�
  const all=(await request('/api/admin/products')).data,p=all.find(p=>p.stock>=3&&p.customerVisible&&p.price>0),q=all.find(q=>q.id!==p.id&&q.stock>=3&&q.orderVisible&&q.price>0);
  const publicOrder=await request('/api/orders','POST',{requestId:'public-customer',channel:'customer',name:'顧客',phone:'0900000000',items:[{id:p.id,qty:1,price:p.price}]},false,'https://evil-deny.github.io');assert.equal(publicOrder.status,201);
  const staffPayload={requestId:'staff-order',channel:'order',name:'員工測試',items:[{id:p.id,qty:1,price:p.price},{id:q.id,qty:2,price:q.price},{id:'custom-test',custom:true,name:'自訂商品',qty:1,price:75}]};
- assert.equal((await request('/api/orders','POST',staffPayload,false)).status,201);
- assert.equal((await request('/api/orders','POST',{...staffPayload,requestId:'fake-price',channel:'customer',phone:'0900000000'},false)).status,403);
+ assert.equal((await request('/api/orders','POST',staffPayload,true)).status,201);
+ assert.equal((await request('/api/orders','POST',{...staffPayload,requestId:'fake-price',channel:'customer',phone:'0900000000'},true)).status,403);
  const staffResult=await request('/api/orders','POST',staffPayload);assert.equal(staffResult.status,201);let o=(await request('/api/admin/orders')).data.find(o=>o.id===staffResult.data.id);
  assert.equal((await request('/api/admin/products')).data.find(i=>i.id===q.id).stock,q.stock-2);
  o=(await request('/api/admin/orders/'+o.id,'PATCH',{revision:o.revision,action:'pick',itemId:p.id,picked:true})).data;assert.equal(o.status,'picking');
@@ -133,7 +164,7 @@ test('顧客免登入送單，員工流程保留揀貨、部分出貨與自訂�
  assert.equal((await request('/api/admin/products')).data.find(i=>i.id===p.id).stock,p.stock);
 });
 
-test('員工免登入、雙價格隔離、庫存一致、調價保留歷史與管理權限',async()=>{
+test('員工登入、雙價格隔離、庫存一致、調價保留歷史與管理權限',async()=>{
  const origin='https://evil-deny.github.io';
  let p=(await request('/api/admin/products','POST',{name:'雙價格測試',category:'測試',type:'豆製品',storage:'冷藏',image:'',price:150,orderPrice:90,stock:4,orderVisible:true,customerVisible:true})).data;
  const customer=(await request('/api/products?channel=customer','GET',undefined,false,origin)).data.find(x=>x.id===p.id);
@@ -141,13 +172,13 @@ test('員工免登入、雙價格隔離、庫存一致、調價保留歷史與�
  assert.equal(customer.price,150);assert.equal(staff.price,90);assert.equal('orderPrice' in customer,false);assert.equal('orderPrice' in staff,false);
  const payload=(channel,price,id)=>({requestId:id,channel,name:'免登入測試',...(channel==='customer'?{phone:'0900000000'}:{}),items:[{id:p.id,price,qty:1}]});
  assert.equal((await request('/api/orders','POST',payload('customer',90,'wrong-customer'),false,origin)).status,409);
- assert.equal((await request('/api/orders','POST',payload('order',150,'wrong-staff'),false,origin)).status,409);
- const a=await request('/api/orders','POST',payload('order',90,'anonymous-staff'),false,origin);assert.equal(a.status,201);assert.equal(a.data.total,90);
- assert.equal((await request('/api/orders','POST',payload('order',90,'anonymous-staff'),false,origin)).data.id,a.data.id);
+ assert.equal((await request('/api/orders','POST',payload('order',150,'wrong-staff'),true,origin)).status,409);
+ const a=await request('/api/orders','POST',payload('order',90,'anonymous-staff'),true,origin);assert.equal(a.status,201);assert.equal(a.data.total,90);
+ assert.equal((await request('/api/orders','POST',payload('order',90,'anonymous-staff'),true,origin)).data.id,a.data.id);
  const b=await request('/api/orders','POST',payload('customer',150,'anonymous-customer'),false,origin);assert.equal(b.status,201);assert.equal(b.data.total,150);
  p=(await request('/api/admin/products')).data.find(x=>x.id===p.id);assert.equal(p.stock,2);
  p=(await request('/api/admin/products/'+p.id,'PATCH',{...p,orderPrice:80,price:160})).data;
- assert.equal((await request('/api/orders','POST',payload('order',90,'stale-staff'),false,origin)).status,409);
+ assert.equal((await request('/api/orders','POST',payload('order',90,'stale-staff'),true,origin)).status,409);
  assert.equal((await request('/api/orders','POST',payload('customer',150,'stale-customer'),false,origin)).status,409);
  let orders=(await request('/api/admin/orders')).data;assert.equal(orders.find(o=>o.id===a.data.id).items[0].price,90);assert.equal(orders.find(o=>o.id===b.data.id).items[0].price,150);
  assert.equal((await request('/api/admin/orders','GET',undefined,false,origin)).status,401);
@@ -158,7 +189,7 @@ test('員工免登入、雙價格隔離、庫存一致、調價保留歷史與�
  p=(await request('/api/admin/products')).data.find(x=>x.id===p.id);
  p=(await request('/api/admin/products/'+p.id,'PATCH',{...p,orderPrice:0,orderVisible:false})).data;
  assert.equal((await request('/api/products?channel=order','GET',undefined,false)).data.some(x=>x.id===p.id),false);
- assert.equal((await request('/api/orders','POST',payload('order',0,'hidden-staff'),false)).status,409);
+ assert.equal((await request('/api/orders','POST',payload('order',0,'hidden-staff'),true)).status,409);
  assert.equal((await request('/api/admin/products/'+p.id,'PATCH',{...p,orderPrice:-1})).status,400);
  const fallback=(await request('/api/admin/products')).data.find(x=>x.id==='p1');assert.equal(fallback.orderPrice,fallback.price);
  const repo=(await import('../.sites-runtime/test/backstage.mjs')).createRepository(db);
@@ -179,23 +210,23 @@ test('新增員工價欄位保留既有商品、庫存與原價',()=>{
  legacy.close();
 });
 
-test('公開員工訂單保留自訂開單、揀貨、部分出貨、退貨及結案，商品管理仍受保護',async()=>{
+test('白名單員工訂單保留自訂開單、揀貨、部分出貨、退貨及結案，商品管理仍受保護',async()=>{
  const origin='https://evil-deny.github.io';
  const p=(await request('/api/products?channel=order','GET',undefined,false)).data.find(p=>p.stock>=3&&p.price>0);
- const place=await request('/api/orders','POST',{requestId:'public-staff-workflow',channel:'order',name:'員工流程測試',items:[{id:p.id,price:p.price,qty:2},{id:'custom-public',name:'客製化品項',price:45,qty:1,custom:true}]},false,origin);
+ const place=await request('/api/orders','POST',{requestId:'public-staff-workflow',channel:'order',name:'員工流程測試',items:[{id:p.id,price:p.price,qty:2},{id:'custom-public',name:'客製化品項',price:45,qty:1,custom:true}]},true,origin);
  assert.equal(place.status,201);
- let all=await request('/api/staff/orders','GET',undefined,false,origin);assert.equal(all.status,200);
+ let all=await request('/api/staff/orders','GET',undefined,true,origin);assert.equal(all.status,200);
  let o=all.data.find(o=>o.id===place.data.id);assert.equal(o.channel,'order');assert.equal(o.items.length,2);
- const patch=async body=>{const r=await request('/api/staff/orders/'+o.id,'PATCH',{revision:o.revision,...body},false,origin);assert.equal(r.status,200);o=r.data;return r;};
+ const patch=async body=>{const r=await request('/api/staff/orders/'+o.id,'PATCH',{revision:o.revision,...body},true,origin);assert.equal(r.status,200);o=r.data;return r;};
  await patch({action:'pick',itemId:p.id,picked:true});assert.equal(o.status,'picking');
  await patch({action:'ship',pickedIds:[p.id]});assert.equal(o.total,p.price*2);assert.equal(o.items[1].picked,false);
- const stale=await request('/api/staff/orders/'+o.id,'PATCH',{revision:o.revision-1,action:'closeReturn'},false,origin);assert.equal(stale.status,409);
+ const stale=await request('/api/staff/orders/'+o.id,'PATCH',{revision:o.revision-1,action:'closeReturn'},true,origin);assert.equal(stale.status,409);
  await patch({action:'return',items:[{id:p.id,qty:1}]});assert.equal(o.returns[0].qty,1);
  assert.equal((await request('/api/admin/products')).data.find(x=>x.id===p.id).stock,p.stock-1);
  await patch({action:'return',items:[{id:p.id,qty:1}]});assert.ok(o.returnClosedAt);
  assert.equal((await request('/api/admin/products')).data.find(x=>x.id===p.id).stock,p.stock);
  await patch({action:'archive'});assert.ok(o.archivedAt);
- assert.equal((await request('/api/staff/orders','GET',undefined,false,'https://elsewhere.example')).status,403);
+ assert.equal((await request('/api/staff/orders','GET',undefined,true,'https://elsewhere.example')).status,403);
  for(const endpoint of ['/api/admin/products','/api/admin/orders','/api/admin/backup'])assert.equal((await request(endpoint,'GET',undefined,false,origin)).status,401);
  assert.equal((await request('/api/admin/products/'+p.id,'PATCH',{...p,price:1},false,origin)).status,401);
 });
@@ -203,11 +234,11 @@ test('公開員工訂單保留自訂開單、揀貨、部分出貨、退貨及�
 test('顧客送出的訂單出現在同一份員工待出貨清單並可揀貨出貨',async()=>{
  const p=(await request('/api/products?channel=customer','GET',undefined,false)).data.find(p=>p.stock>=1&&p.price>0);
  const submitted=await request('/api/orders','POST',{requestId:'customer-to-shipping',channel:'customer',name:'顧客同步驗證',phone:'0900000000',items:[{id:p.id,price:p.price,qty:1}]},false,'https://evil-deny.github.io');assert.equal(submitted.status,201);
- const orders=(await request('/api/staff/orders','GET',undefined,false,'https://evil-deny.github.io')).data;
+ const orders=(await request('/api/staff/orders','GET',undefined,true,'https://evil-deny.github.io')).data;
  let order=orders.filter(o=>!o.archivedAt&&['new','picking'].includes(o.status)).find(o=>o.id===submitted.data.id);assert.ok(order);assert.equal(order.channel,'customer');assert.equal(order.items[0].price,p.price);
- let result=await request('/api/staff/orders/'+order.id,'PATCH',{revision:order.revision,action:'pick',itemId:p.id,picked:true},false);assert.equal(result.status,200);order=result.data;
- result=await request('/api/staff/orders/'+order.id,'PATCH',{revision:order.revision,action:'ship',pickedIds:[p.id]},false);assert.equal(result.status,200);order=result.data;assert.equal(order.status,'shipped');assert.equal(order.channel,'customer');
- result=await request('/api/staff/orders/'+order.id,'PATCH',{revision:order.revision,action:'return',items:[{id:p.id,qty:1}]},false);assert.equal(result.status,200);assert.equal((await request('/api/admin/products')).data.find(x=>x.id===p.id).stock,p.stock);
+ let result=await request('/api/staff/orders/'+order.id,'PATCH',{revision:order.revision,action:'pick',itemId:p.id,picked:true},true);assert.equal(result.status,200);order=result.data;
+ result=await request('/api/staff/orders/'+order.id,'PATCH',{revision:order.revision,action:'ship',pickedIds:[p.id]},true);assert.equal(result.status,200);order=result.data;assert.equal(order.status,'shipped');assert.equal(order.channel,'customer');
+ result=await request('/api/staff/orders/'+order.id,'PATCH',{revision:order.revision,action:'return',items:[{id:p.id,qty:1}]},true);assert.equal(result.status,200);assert.equal((await request('/api/admin/products')).data.find(x=>x.id===p.id).stock,p.stock);
 });
 
 test('新增品項原子接續固定編號，隱藏與改分類不改號，三個目錄按商品編號排序',async()=>{
@@ -261,7 +292,7 @@ test('管理員刪除與還原訂單：預留庫存只回補一次，歷史銷�
  const place=async key=>{const r=await request('/api/orders','POST',{requestId:key,channel:'customer',name:'刪單測試',phone:'0900000000',items:[{id:p.id,price:20,qty:2}]},false);assert.equal(r.status,201);return (await request('/api/admin/orders')).data.find(o=>o.id===r.data.id);};
  const patch=(o,action,extra={})=>request('/api/admin/orders/'+o.id,'PATCH',{revision:o.revision,action,...extra});
  let o=await place('delete-pending');assert.equal(await stock(),8);
- for(const action of ['delete','restoreOrder'])assert.equal((await request('/api/staff/orders/'+o.id,'PATCH',{revision:o.revision,action},false)).status,403);
+ for(const action of ['delete','restoreOrder'])assert.equal((await request('/api/staff/orders/'+o.id,'PATCH',{revision:o.revision,action},false)).status,401);
  o=(await patch(o,'pick',{itemId:p.id,picked:true})).data;
  const concurrent=await Promise.all([patch(o,'delete'),patch(o,'delete')]);assert.deepEqual(concurrent.map(r=>r.status).sort(),[200,409]);o=concurrent.find(r=>r.status===200).data;
  assert.equal(o.status,'cancelled');assert.ok(o.deletedAt);assert.ok(o.archivedAt);assert.equal(await stock(),10);

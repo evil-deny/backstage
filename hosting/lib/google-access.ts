@@ -1,5 +1,5 @@
 import {createRemoteJWKSet,jwtVerify} from 'jose';
-export type AccessConfig={ADMIN_EMAILS?:string;GOOGLE_CLIENT_ID?:string};
+export type AccessConfig={ADMIN_EMAILS?:string;STAFF_EMAILS?:string;GOOGLE_CLIENT_ID?:string};
 export const GITHUB_ORIGIN='https://evil-deny.github.io';
 export const GITHUB_ADMIN=GITHUB_ORIGIN+'/backstage/';
 export const randomToken=()=>Array.from(crypto.getRandomValues(new Uint8Array(32)),b=>b.toString(16).padStart(2,'0')).join('');
@@ -13,6 +13,8 @@ export async function isAdmin(request:Request,db:D1Database,config:AccessConfig)
  const grant=await db.prepare("SELECT subject,email FROM api_grants WHERE hash=? AND expires>? AND provider='google' AND audience=?").bind(await digest(bearer),Date.now(),config.GOOGLE_CLIENT_ID).first<{subject:string;email:string}>();
  return !!grant?.subject&&!!grant?.email&&emailAllowed(grant.email,config);
 }
+export async function isStaff(request:Request,db:D1Database,config:AccessConfig){return isAdmin(request,db,{...config,ADMIN_EMAILS:[config.ADMIN_EMAILS,config.STAFF_EMAILS].filter(Boolean).join(',')});}
+export async function staffEmail(request:Request,db:D1Database){const token=request.headers.get('authorization')?.replace(/^Bearer /,'')||'';const row=await db.prepare('SELECT email FROM api_grants WHERE hash=?').bind(await digest(token)).first<{email:string}>();return row?.email||'';}
 export function allowedOrigin(request:Request){
  const origin=request.headers.get('origin');return !origin||origin===new URL(request.url).origin||origin===GITHUB_ORIGIN;
 }
@@ -34,7 +36,7 @@ export async function googleLogin(db:D1Database,config:AccessConfig,body:any){
  try{({payload}=await jwtVerify(body.credential,googleKeys,{algorithms:['RS256'],audience:config.GOOGLE_CLIENT_ID,issuer:['accounts.google.com','https://accounts.google.com'],requiredClaims:['sub','email','email_verified','nonce','iat','exp'],maxTokenAge:'10m',clockTolerance:5}));}catch{return null;}
  if(typeof payload.sub!=='string'||!payload.sub||typeof payload.email!=='string'||payload.email_verified!==true||typeof payload.nonce!=='string'||!/^[a-f0-9]{64}$/.test(payload.nonce))return null;
  const email=payload.email.toLowerCase();
- if(!emailAllowed(email,config))throw Object.assign(Error('此 Google 帳號沒有管理權限，請改用管理員的 Gmail 帳號'),{status:403});
+ if(!emailAllowed(email,{...config,ADMIN_EMAILS:[config.ADMIN_EMAILS,config.STAFF_EMAILS].filter(Boolean).join(',')}))throw Object.assign(Error('此 Google 帳號沒有管理權限，請改用管理員的 Gmail 帳號'),{status:403});
  const challenge=await db.prepare('DELETE FROM google_login_challenges WHERE hash=? AND challenge=? AND expires>? RETURNING hash').bind(await digest(payload.nonce),await pkce(body.verifier),Date.now()).first();
  if(!challenge)return null;
  const token=randomToken(),expires=Date.now()+8*3600000;

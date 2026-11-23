@@ -248,10 +248,11 @@
   <main class="wrap">
     <div class="main-tabs">
       <button class="main-tab active" data-main-view="orderPage">訂購</button>
-      <button class="main-tab" data-main-view="shipPage">出貨</button>
+      <button class="main-tab" data-main-view="myOrdersPage">我的訂單</button><button class="main-tab" data-main-view="shipPage">出貨</button>
       <button class="main-tab" data-main-view="returnPage">退貨</button>
     </div>
 
+<section class="main-view" id="myOrdersPage"><h2>我的訂單明細</h2><p>顯示此 Google 帳號送出的訂單；舊訂單未綁定帳號，不會列入。</p><button id="refreshMyOrders">更新我的訂單</button><div id="myOrdersList"></div></section>
     <div class="order-sync"><span id="orderSyncStatus" role="status">訂單每 15 秒同步</span></div>
     <section class="main-view active" id="orderPage">
       <section class="search-row staff-catalog-nav" aria-label="選購商品">
@@ -284,7 +285,7 @@
 
   <footer class="bottom-bar"><div class="bottom-inner"><div class="total">合計 <strong id="cartTotal">$0</strong><small id="cartItemCount">尚未選擇商品</small></div><button class="checkout" id="checkout">確認訂單</button></div></footer>
 
-  <section class="modal" id="receiptModal"><div class="modal-card"><div class="modal-head"><h2>訂單確認</h2><button class="close" data-close="receiptModal">×</button></div><div class="modal-body"><div id="receiptContent"></div><div class="actions"><button class="secondary" data-close="receiptModal">返回修改</button><button class="blue" id="printReceipt">影印明細</button><button class="blue" id="shareReceiptImage">圖片分享</button><button class="primary" id="saveOrder">送出訂單</button></div></div></div></section>
+  <section class="modal" id="receiptModal"><div class="modal-card"><div class="modal-head"><h2>訂單確認</h2><button class="close" data-close="receiptModal">×</button></div><div class="modal-body"><div id="receiptContent"></div><div class="actions"><button class="secondary" data-close="receiptModal">返回修改</button><button class="blue" id="printReceipt">影印明細</button><button class="blue" id="shareReceiptImage">送出訂單並分享圖片</button><button class="primary" id="saveOrder">送出訂單</button></div></div></div></section>
   <section class="modal" id="imageModal"><div class="image-modal-card"><div class="modal-head"><h2 id="imageModalTitle">商品圖片</h2><button class="close" data-close="imageModal">×</button></div><img id="imagePreview" class="image-preview" src="" alt=""></div></section>
   <section class="modal" id="adminLogin"><div class="modal-card" style="max-width:420px"><div class="modal-head"><h2>後台登入</h2><button class="close" data-close="adminLogin">×</button></div><div class="modal-body"><label>密碼<input id="adminPassword" type="password" inputmode="numeric" placeholder="請輸入密碼"></label><div class="actions"><button class="primary" id="loginAdmin">進入後台</button></div></div></div></section>
   <section class="modal" id="adminPanel"><div class="modal-card"><div class="modal-head"><h2>後台管理</h2><button class="close" data-close="adminPanel">×</button></div><div class="modal-body"><div class="admin-tabs"><button class="tab active" data-admin-tab="overview">總覽</button><button class="tab" data-admin-tab="dailySummary">日品項統計</button><button class="tab" data-admin-tab="inventory">庫存</button></div><div class="admin-view active" id="overview"></div><div class="admin-view" id="dailySummary"></div><div class="admin-view" id="inventory"></div></div></div></section>
@@ -294,6 +295,11 @@
     import {orderLabel,sourceLabel,sourceClass} from "/order-display.js";
     import {catalogOrder,catalogGroups} from "/catalog-order.js";
     await FuyuanCloud.ready;
+    async function requireStaff(){
+      try{await FuyuanCloud.request('/staff/access');return;}catch(e){if(e.status!==401)throw e;}
+      await new Promise(resolve=>{const gate=document.createElement('section');gate.style.cssText='position:fixed;inset:0;z-index:20000;background:#f4f8f5;display:grid;place-items:center;padding:24px';gate.innerHTML='<div style="background:white;padding:32px;border-radius:16px;max-width:420px"><h1>員工 Google 登入</h1><p>僅限白名單帳號使用訂購、出貨與退貨功能。</p><div id="staffGoogleLogin"></div><p id="staffLoginError" role="alert"></p><button id="staffLoginRetry">重新載入登入</button></div>';document.body.append(gate);const login=()=>FuyuanCloud.mountGoogle(gate.querySelector('#staffGoogleLogin'),async()=>{try{await FuyuanCloud.request('/staff/access');gate.remove();resolve();}catch(e){gate.querySelector('#staffLoginError').textContent=e.message;}},e=>{gate.querySelector('#staffLoginError').textContent=e.message;});gate.querySelector('#staffLoginRetry').onclick=()=>login().catch(e=>gate.querySelector('#staffLoginError').textContent=e.message);login().catch(e=>gate.querySelector('#staffLoginError').textContent=e.message);});
+    }
+    await requireStaff();
     document.addEventListener("keydown",e=>{if(e.target.matches("[data-image-open]")&&["Enter"," "].includes(e.key)){e.preventDefault();e.target.click();}});
     const PRODUCTS=await FuyuanCloud.loadProducts('order');
     let activeSupply='company';
@@ -616,6 +622,7 @@
         return;
       }
       try{
+        await submitPendingOrder();
         const canvas=drawShareCanvas();
         const blob=await new Promise(resolve=>canvas.toBlob(resolve,"image/png"));
         const filename=`福緣訂單明細_${pendingOrder.name}_${Date.now()}.png`;
@@ -631,7 +638,7 @@
           alert("此瀏覽器無法直接分享圖片，已改為下載明細圖片。");
         }
       }catch(error){
-        alert("圖片分享未完成，可以留在此頁繼續送出訂單。");
+        alert(pendingOrder?.cloudSubmitted?"訂單已送出；圖片分享未完成，可再次點擊分享，不會重複送單。":error.message||"訂單送出失敗，尚未分享圖片，請重試。");
       }
     }
     function syncPendingToPage(){
@@ -836,14 +843,28 @@
     function confirmCloud(message){
       return new Promise(resolve=>{const dialog=document.createElement('dialog');dialog.style.cssText='max-width:560px;width:90%;border:1px solid #cbd5e1;border-radius:14px;padding:26px;color:#1f2937;font:20px/1.7 sans-serif';const heading=document.createElement('h2');heading.textContent='確認訂單操作';const messageNode=document.createElement('p');messageNode.textContent=message;const cancel=document.createElement('button');cancel.textContent='返回';cancel.className='secondary';const ok=document.createElement('button');ok.textContent='確認';ok.className='primary';const actions=document.createElement('div');actions.className='actions';actions.append(cancel,ok);dialog.append(heading,messageNode,actions);document.body.append(dialog);let answer=false;cancel.onclick=()=>dialog.close();ok.onclick=()=>{answer=true;dialog.close();};dialog.onclose=()=>{dialog.remove();resolve(answer);};dialog.showModal();});
     }
+    async function loadMyOrders(){
+      const target=document.getElementById('myOrdersList');target.textContent='正在載入…';
+      try{const orders=await FuyuanCloud.request('/staff/my-orders'),labels={new:'待出貨',picking:'揀貨中',shipped:'已出貨',returned:'有退貨',cancelled:'已取消'};
+      target.innerHTML=orders.map(o=>`<article class="order-card"><h3>${attrText(orderLabel(o.id))} · ${attrText(labels[o.status]||o.status)}</h3><p>${attrText(o.name)} · ${attrText(new Date(o.createdAt).toLocaleString('zh-TW',{timeZone:'Asia/Taipei'}))}</p><div style="overflow-x:auto"><table style="width:100%;min-width:340px"><thead><tr><th>品項</th><th>單價</th><th>數量</th><th>退貨</th></tr></thead><tbody>${o.items.map(i=>`<tr><td>${attrText(i.name)}${i.picked===false&&['shipped','returned'].includes(o.status)?'（未出貨）':''}</td><td>${i.market?'時價':'$'+i.price}</td><td>${i.qty} ${attrText(i.unit||'件')}</td><td>${o.returns.filter(r=>r.id===i.id).reduce((s,r)=>s+r.qty,0)}</td></tr>`).join('')}</tbody></table></div><p><strong>原訂單金額 $${o.total}${o.market?'＋時價':''} · 退貨 $${o.returns.reduce((s,r)=>s+r.price*r.qty,0)}</strong></p><p>備註：${attrText(o.note||'無')}</p></article>`).join('')||'<p>目前沒有此帳號送出的訂單。</p>';
+      }catch(e){target.textContent=e.message;}
+    }
+    document.getElementById('refreshMyOrders').onclick=loadMyOrders;
+    document.addEventListener('click',e=>{if(e.target.closest('[data-main-view="myOrdersPage"]'))loadMyOrders();});
+    async function submitPendingOrder(){
+      if(!pendingOrder?.items.length)throw Error('請至少選擇一個品項。');
+      if(pendingOrder.cloudSubmitted)return pendingOrder.cloudSubmitted;
+      if(pendingOrder.submissionPromise)return pendingOrder.submissionPromise;
+      const draft=pendingOrder;draft.cloudRequestId??=cloudRequestId||FuyuanCloud.random();cloudRequestId=draft.cloudRequestId;
+      draft.submissionPromise=FuyuanCloud.place({requestId:draft.cloudRequestId,channel:'order',name:draft.name,phone:'',note:draft.note,items:draft.items.map(i=>({id:i.id,name:i.custom?i.name:product(i.id).name,custom:!!i.custom,qty:i.qty,price:itemPrice(i),unit:i.unit??'件'}))}).then(o=>{draft.cloudSubmitted=o;cloudRequestId=null;clearCart();document.querySelectorAll('#receiptModal [data-close]').forEach(b=>b.disabled=true);FuyuanCloud.notice('訂單 '+orderLabel(o.id)+' 已送出。分享取消也不會撤回訂單。');return o;}).finally(()=>{delete draft.submissionPromise;});return draft.submissionPromise;
+    }
     async function cloudAction(action){if(cloudBusy){FuyuanCloud.notice('正在同步，請稍候再操作。');return;}cloudBusy=true;try{await action();await refreshCloud(true);}catch(e){FuyuanCloud.notice(e.message);try{await refreshCloud(true);}catch{}}finally{cloudBusy=false;}}
     document.addEventListener('click',e=>{
       const b=e.target.closest('#saveOrder,#openAdmin,#loginAdmin,[data-ship],[data-complete-return],[data-no-return],[data-delete-order]');if(!b)return;e.preventDefault();e.stopImmediatePropagation();
       if(b.id==='openAdmin'||b.id==='loginAdmin'){location.assign(FuyuanCloud.ADMIN);return;}
       cloudAction(async()=>{
         if(b.id==='saveOrder'){
-          if(!pendingOrder?.items.length)throw Error('請至少選擇一個品項。');pendingOrder.cloudRequestId??=cloudRequestId||FuyuanCloud.random();cloudRequestId=pendingOrder.cloudRequestId;
-          const o=await FuyuanCloud.place({requestId:pendingOrder.cloudRequestId,channel:'order',name:pendingOrder.name,phone:'',note:pendingOrder.note,items:pendingOrder.items.map(i=>({id:i.id,name:i.custom?i.name:product(i.id).name,custom:!!i.custom,qty:i.qty,price:itemPrice(i),unit:i.unit??"件"}))});cloudRequestId=null;clearCart();pendingOrder=null;closeModal('receiptModal');FuyuanCloud.notice('訂單 '+orderLabel(o.id)+' 已送至共用後台。');return;
+          await submitPendingOrder();pendingOrder=null;closeModal('receiptModal');document.querySelectorAll('#receiptModal [data-close]').forEach(b=>b.disabled=false);return;
         }
         const id=b.dataset.ship||b.dataset.completeReturn||b.dataset.noReturn||b.dataset.deleteOrder,o=state.orders.find(o=>o.id===id);if(!o)throw Error('訂單已更新，請重新整理。');
         if(b.dataset.ship){const missing=o.items.filter(i=>!i.picked);if(missing.length&&!await confirmCloud(`本次有 ${missing.length} 項未勾選，不會出貨。確認完成出貨並釋放這些品項的預留庫存？`))return;await FuyuanCloud.request('/staff/orders/'+encodeURIComponent(id),'PATCH',{action:'ship',revision:o.revision,pickedIds:o.items.filter(i=>i.picked).map(i=>i.id)});FuyuanCloud.notice('已完成出貨；未出貨品項的預留庫存已釋放。');}

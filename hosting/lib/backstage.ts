@@ -2,7 +2,7 @@ import catalog from '../data/catalog.json';
 import {billingData,billingAction} from './billing';
 import {catalogOrder} from '../public/catalog-order.js';
 import {movedCatalog} from '../public/catalog-layout.js';
-import {isAdmin,allowedOrigin,corsHeaders,startGoogleLogin,googleLogin,revoke,digest,type AccessConfig} from './google-access';
+import {staffEmail,isStaff,isAdmin,allowedOrigin,corsHeaders,startGoogleLogin,googleLogin,revoke,digest,type AccessConfig} from './google-access';
 type Product={id:string;name:string;category:string;type:string;storage:string;image:string;price:number;orderPrice:number;orderUnit:string;customerUnit:string;stock:number|null;orderVisible:boolean;customerVisible:boolean;revision:number;displayNumber?:number|null;code?:string;deletedAt?:string;deletedCode?:string};
 type Item={id:string;name:string;price:number;qty:number;unit?:string;code?:string;category?:string;market:boolean;returnedAt?:string;custom?:boolean;picked?:boolean};
 type Order={id:string;channel:string;name:string;phone:string;note:string;createdAt:string;status:string;items:Item[];returns:Item[];total:number;market:boolean;revision:number;shippedAt?:string;returnClosedAt?:string;archivedAt?:string;deletedAt?:string;deletedArchivedAt?:string;requestFingerprint?:string;submittedTotal?:number;submittedMarket?:boolean};
@@ -58,7 +58,11 @@ export async function handleBackstage(request:Request,db:D1Database,config:Acces
   const url=new URL(request.url),path=url.pathname,method=request.method;
   if(!allowedOrigin(request))fail(403,'不允許此來源操作');
   if(method==='OPTIONS')return new Response(null,{status:204,headers:corsHeaders(request)});
-  const admin=await isAdmin(request,db,config);
+  const members=(await db.prepare('SELECT email,created_at FROM staff_members ORDER BY email').all<any>()).results;config={...config,STAFF_EMAILS:[config.STAFF_EMAILS,...members.map(m=>m.email)].filter(Boolean).join(',')};
+  const admin=await isAdmin(request,db,config),staff=admin||await isStaff(request,db,config);
+  if(path.startsWith('/api/staff/')&&!staff)fail(401,'請使用白名單 Google 帳號登入員工系統');
+  if(path==='/api/staff/my-orders'&&method==='GET'){const email=await staffEmail(request,db);return reply(200,(await createRepository(db).orders()).filter(o=>(o as any).orderedBy===email&&!o.deletedAt));}
+  if(path==='/api/staff/access')return staff?reply(200,{staff:true,admin}):reply(401,{error:'請使用白名單 Google 帳號登入員工系統'});
   if(path==='/api/health')return reply(200,{ok:true});
   if(path==='/api/auth/config'&&method==='GET')return reply(200,{provider:'google',configured:!!config.GOOGLE_CLIENT_ID});
   if(path.startsWith('/api/admin/')&&!admin)fail(401,'請先使用 Google 帳號登入');
@@ -66,6 +70,12 @@ export async function handleBackstage(request:Request,db:D1Database,config:Acces
   if(path==='/api/login'&&method==='POST'){if(!admin)fail(401,'請使用 Google 帳號登入');return reply(200,{ok:true});}
   const repo=createRepository(db);if(!seeded)seeded=repo.seed().then(()=>repo.initialize()).catch(e=>{seeded=null;throw e;});await seeded;
   let b:any={};if(['POST','PATCH'].includes(method)){if(Number(request.headers.get('content-length')||0)>1024*1024)fail(413,'資料超過 1 MB');const raw=await request.text();if(new TextEncoder().encode(raw).length>1024*1024)fail(413,'資料超過 1 MB');try{b=JSON.parse(raw);}catch{fail(400,'JSON 格式錯誤');}if(!b||typeof b!=='object'||Array.isArray(b))fail(400,'資料格式錯誤');}
+  if(path==='/api/admin/staff'&&method==='GET')return reply(200,{members,admins:(config.ADMIN_EMAILS||'').split(',').map(e=>e.trim()).filter(Boolean)});
+  if((path==='/api/admin/staff'||path==='/api/admin/staff/delete')&&method==='POST'){
+   const email=typeof b.email==='string'?b.email.trim().toLowerCase():'';if(email.length>254||!(/^[^\s@]+@[^\s@]+\.[^\s@]+$/).test(email))fail(400,'請輸入有效 Google 信箱');
+   if((config.ADMIN_EMAILS||'').split(',').map(e=>e.trim().toLowerCase()).includes(email))fail(400,'管理員已具有員工權限，不需新增或移除');
+   if(path.endsWith('/delete'))await db.prepare('DELETE FROM staff_members WHERE email=?').bind(email).run();else await db.prepare('INSERT OR IGNORE INTO staff_members(email,created_at) VALUES(?,?)').bind(email,new Date().toISOString()).run();return reply(200,{ok:true});
+  }
   if(path==='/api/auth/exchange')fail(410,'請改使用 Google 帳號登入');
   if(path==='/api/auth/google/start'&&method==='POST')return reply(200,await startGoogleLogin(db,config,b));
   if(path==='/api/auth/google'&&method==='POST'){const grant=await googleLogin(db,config,b);if(!grant)fail(401,'Google 登入憑證已失效，請重新登入');return reply(200,grant);}
@@ -92,13 +102,13 @@ export async function handleBackstage(request:Request,db:D1Database,config:Acces
   if(path==='/api/admin/products'&&method==='POST')return reply(201,await repo.addProduct({...validateProduct(b),revision:1}));
   if(path.startsWith('/api/admin/products/')&&method==='PATCH'){const p=await repo.product(decodeURIComponent(path.split('/').at(-1)!));if(p.deletedAt)fail(409,'商品已刪除，請先還原');if(b.revision!==p.revision)fail(409,'商品已更新，請重新整理');return reply(200,await repo.updateProduct({...p,...validateProduct({...b,orderPrice:b.orderPrice??p.orderPrice,orderUnit:b.orderUnit??p.orderUnit,customerUnit:b.customerUnit??p.customerUnit})}));}
   if(path==='/api/orders'&&method==='POST'){
-   const channel=b.channel==='order'?'order':'customer';
+   const channel=b.channel==='order'?'order':'customer';if(channel==='order'&&!staff)fail(401,'請使用白名單 Google 帳號登入員工系統');
    const requestId=text(b.requestId,80),requestFingerprint=await digest(JSON.stringify({channel,name:b.name,phone:b.phone||'',note:b.note||'',items:Array.isArray(b.items)?b.items.map((i:any)=>({id:i?.id,qty:i?.qty,price:i?.price,...(i?.unit!==undefined?{unit:i.unit}:{}),custom:!!i?.custom,...(i?.custom?{name:i.name}:{})})):null}));
    const result=(o:Order)=>{if(o.requestFingerprint&&o.requestFingerprint!==requestFingerprint)fail(409,'這份訂單已送出；修改內容請開始另一張訂購單');return {id:o.id,total:o.submittedTotal??o.total,market:o.submittedMarket??o.market};};const existing=await repo.findRequest(requestId);if(existing)return reply(201,result(existing));
    const name=text(b.name,60),phone=typeof b.phone==='string'?b.phone.trim().slice(0,40):'';
    if(channel==='customer'&&!/^[\d+()\s-]{6,40}$/.test(phone))fail(400,'請填寫有效聯絡電話');if(!Array.isArray(b.items)||!b.items.length||b.items.length>300)fail(400,'請選擇 1 至 300 項商品');
    const ids=new Set<string>(),items:Item[]=[];for(const i of b.items){if(!i||typeof i!=='object')fail(400,'商品格式錯誤');if(i.custom){if(channel!=='order')fail(403,'顧客不能建立自訂價格品項');const qty=number(i.qty,9999);if(!qty||ids.has(i.id))fail(400,'自訂商品重複或數量為零');ids.add(i.id);items.push({id:text(i.id,80),name:text(i.name,120),price:number(i.price),market:i.price===0,qty,unit:text(i.unit??'件',20),custom:true,picked:false});continue;}const p=await repo.product(text(i.id,80)),qty=number(i.qty,9999);if(p.deletedAt)fail(409,`${p.name} 已刪除，請更新商品`);if(!qty||ids.has(p.id))fail(400,'商品重複或數量為零');ids.add(p.id);if(!p[channel==='order'?'orderVisible':'customerVisible'])fail(409,`${p.name} 已隱藏`);const unit=channel==='order'?p.orderUnit:p.customerUnit;if(i.unit!==undefined&&i.unit!==unit)fail(409,`${p.name} 販售單位已調整，請更新商品`);const price=channel==='order'?p.orderPrice:p.price;if(i.price!==price)fail(409,`${p.name} 價格已調整，請更新商品`);if(p.stock!==null&&p.stock<qty)fail(409,`${p.name} 庫存不足`);items.push({id:p.id,name:p.name,code:p.code,category:p.category,price,unit,market:price===0,qty,custom:false,picked:false});}
-   const o:Order={id:'FY-'+crypto.randomUUID(),channel,name,phone,note:typeof b.note==='string'?b.note.slice(0,500):'',createdAt:new Date().toISOString(),status:'new',items,returns:[],total:items.reduce((s,i)=>s+i.price*i.qty,0),market:items.some(i=>i.market),revision:1,requestFingerprint,submittedTotal:items.reduce((s,i)=>s+i.price*i.qty,0),submittedMarket:items.some(i=>i.market)};
+   const o:Order={...(channel==='order'?{orderedBy:await staffEmail(request,db)}:{}),id:'FY-'+crypto.randomUUID(),channel,name,phone,note:typeof b.note==='string'?b.note.slice(0,500):'',createdAt:new Date().toISOString(),status:'new',items,returns:[],total:items.reduce((s,i)=>s+i.price*i.qty,0),market:items.some(i=>i.market),revision:1,requestFingerprint,submittedTotal:items.reduce((s,i)=>s+i.price*i.qty,0),submittedMarket:items.some(i=>i.market)};
    try{await repo.place(o,requestId);}catch(e){const previous=await repo.findRequest(requestId);if(previous)return reply(201,result(previous));if(String(e).includes('CHECK constraint')||String(e).includes('UNIQUE constraint'))fail(409,'價格、單位、上下架或庫存已變更，請更新商品後重試');throw e;}return reply(201,result(o));
   }
   if((path==='/api/admin/orders'||path==='/api/staff/orders')&&method==='GET')return reply(200,await repo.orders());

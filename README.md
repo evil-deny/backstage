@@ -12,7 +12,7 @@
 
 三個前端都連到同一個雲端 API 與 D1 資料庫。後台儲存價格、品項、可售庫存、order/customer 各自的顯示狀態後，order 每 15 秒、customer 每 20 秒更新，切回頁面也會更新；送單時一律由伺服器再驗證。日常商品維護不需要修改或推送三個 repo。
 
-員工與顧客訂購皆免登入，員工頁保留原本訂購／出貨／退貨流程，不含商品管理入口。正式後台使用 Google Identity Services「使用 Google 帳號登入」，伺服器以 Google 公鑰驗證 RS256 簽章、issuer、GOOGLE_CLIENT_ID audience、有效時間、已驗證的 email 與 ADMIN_EMAILS 管理員白名單。Google 的 sub 為帳號識別，nonce 與瀏覽器 PKCE verifier 綁定並一次性消耗，阻擋重播與登入 CSRF。
+員工訂購、出貨與退貨改用 Google 白名單登入，ADMIN_EMAILS 管理員及 STAFF_EMAILS 員工可使用；只有 ADMIN_EMAILS 能進管理後台。顧客訂購仍免登入。員工「送出訂單並分享圖片」先送單成功再分享；取消分享不撤回訂單，同一明細重試不重複開單。正式後台使用 Google Identity Services「使用 Google 帳號登入」，伺服器以 Google 公鑰驗證 RS256 簽章、issuer、GOOGLE_CLIENT_ID audience、有效時間、已驗證的 email 與 ADMIN_EMAILS 管理員白名單。Google 的 sub 為帳號識別，nonce 與瀏覽器 PKCE verifier 綁定並一次性消耗，阻擋重播與登入 CSRF。
 
 登入後取得八小時 API 授權，伺服器只儲存 token 雜湊及 Google 帳號／用戶端關聯，原始 token 僅存於當前分頁 sessionStorage。登出會撤銷 API 授權；舊版 ChatGPT 授權及平台登入標頭不再授予管理權限。Google 用戶端只需身分登入，沒有 Gmail 郵件存取權，也不使用 OAuth 用戶端密鑰。
 
@@ -106,6 +106,8 @@ docker run -d --name fuyuan-backstage --restart unless-stopped \
 Docker 預設 `COOKIE_SECURE=true`，請透過正式 HTTPS 代理進入；本機 HTTP 測試時才加 `--env COOKIE_SECURE=false`。永久磁碟必須保留；刪除磁碟後資料無法由 repo 還原。Docker 設定已提供，尚未在此環境實際執行 Docker build。
 
 ## 備份與維運
+
+後台「員工權限」可加入／移除員工 Google 信箱（staff_members），只有管理員可操作。新增員工不授予管理後台權限，移除後舊憑證也會被每次 API 權限檢查拒絕。員工「我的訂單」只列出本人 Google 帳號送出的新訂單，舊訂單未記錄帳號，不自動配對姓名。顧客送單仍免登入。圖片分享先完成共用後端送單，再開啟分享或下載；取消圖片分享不撤回已送出訂單，重試相同明細沿用 requestId 避免重複送出。
 
 營運總覽、商品分析及分析 CSV 會排除已刪除訂單，包含金額、出貨／退貨數量、待出貨與訂單筆數；還原訂單後重新計入。員工端的封存不等同刪除，仍列入分析。退貨金額總覽不顯示已刪除批發人，還原後再顯示。原始帳款、退貨抵扣與備份資料持續保留，統計顯示與結帳帳務分開處理。
 

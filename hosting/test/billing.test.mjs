@@ -18,7 +18,7 @@ async function request(path,method='GET',body,auth=true){const r=await handleBac
 const person={name:'每日結帳測試',phone:'0900000000'},date=billingDay(new Date().toISOString());
 let counter=0;
 async function post(input){const orderRevisions=(await request('/api/admin/orders')).data.filter(o=>o.channel==='order'&&JSON.stringify([o.name,o.phone])===JSON.stringify([(input.person??person).name,(input.person??person).phone])).map(o=>({id:o.id,revision:o.revision}));const state=(await request('/api/admin/billing')).data;return request('/api/admin/billing','POST',{person,date,manualItems:[],rent:0,marketPrices:{},orderRevisions,revision:state.revision,requestId:'billing-operation-'+(++counter),...input});}
-async function order(products,channel='order',who=person){const r=await request('/api/orders','POST',{requestId:'billing-order-'+(++counter),channel,...who,items:products.map(p=>({id:p.id,price:channel==='order'?p.orderPrice:p.price,qty:2}))},false);assert.equal(r.status,201);const shipped=await request('/api/admin/orders/'+r.data.id,'PATCH',{action:'ship',revision:1});assert.equal(shipped.status,200);return shipped.data;}
+async function order(products,channel='order',who=person){const r=await request('/api/orders','POST',{requestId:'billing-order-'+(++counter),channel,...who,items:products.map(p=>({id:p.id,price:channel==='order'?p.orderPrice:p.price,qty:2}))},true);assert.equal(r.status,201);const shipped=await request('/api/admin/orders/'+r.data.id,'PATCH',{action:'ship',revision:1});assert.equal(shipped.status,200);return shipped.data;}
 async function product(name,category,price=100){const r=await request('/api/admin/products','POST',{name,category,type:'測試',storage:'乾貨',price,orderPrice:price,stock:100,orderVisible:true,customerVisible:true});assert.equal(r.status,201);return r.data;}
 test('每日批發結帳、雙分類、單分類單品、手填租金、跨日退貨抵扣與權限',async()=>{
  assert.equal((await request('/api/admin/billing','GET',undefined,false)).status,401);
@@ -31,7 +31,7 @@ test('每日批發結帳、雙分類、單分類單品、手填租金、跨日�
  const stale=await request('/api/admin/billing','POST',{person,date,manualItems:[],rent:10,revision:0,requestId:'stale-operation'});assert.equal(stale.status,409);
  // New catalog price and category cannot change the original bill or its refund value.
  const current=(await request('/api/admin/products')).data.find(p=>p.id===a.id);await request('/api/admin/products/'+a.id,'PATCH',{...current,orderPrice:500,category:'改分類'});
- const returned=await request('/api/staff/orders/'+oa.id,'PATCH',{revision:oa.revision,action:'return',items:[{id:a.id,qty:2}]},false);assert.equal(returned.status,200);
+ const returned=await request('/api/staff/orders/'+oa.id,'PATCH',{revision:oa.revision,action:'return',items:[{id:a.id,qty:2}]},true);assert.equal(returned.status,200);
  let state=(await request('/api/admin/billing')).data;assert.equal(state.bills[0].goodsCents,30000);
  result=await request('/api/admin/billing/manual-return','POST',{revision:state.revision,requestId:'manual-return-1',invoiceId:first.id,lineIndex:0,qty:1,date});assert.equal(result.status,200);assert.equal(result.data.amountCents,1250);
  state=(await request('/api/admin/billing')).data;

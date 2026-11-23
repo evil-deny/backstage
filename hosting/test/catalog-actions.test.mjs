@@ -31,7 +31,7 @@ test('P198–P200 插入 P35 後，實際顯示 P36–P38、後面順延且身�
  assert.deepEqual(layout.products.slice(34,39).map(p=>[p.id,p.code]),[['p35','P35'],['p198','P36'],['p199','P37'],['p200','P38'],['p36','P39']]);
  for(const path of ['products?channel=order','products?channel=customer']){const pub=(await request(path,'GET',undefined,false)).data;assert.deepEqual(pub.slice(34,39).map(p=>p.id),['p35','p198','p199','p200','p36']);}
  for(const p of before){const now=layout.products.find(x=>x.id===p.id);assert.equal(now.price,p.price);assert.equal(now.stock,p.stock===null?null:p.stock-(p.id==='p36'?2:0));}
- const orders=(await request('staff/orders','GET',undefined,false)).data;assert.equal(orders.find(o=>o.requestFingerprint&&o.items[0].id==='p198').items[0].code,'P198');assert.equal(orders.find(o=>o.items[0].id==='p36').items[0].code,'P36');
+ const orders=(await request('staff/orders','GET',undefined,true)).data;assert.equal(orders.find(o=>o.requestFingerprint&&o.items[0].id==='p198').items[0].code,'P198');assert.equal(orders.find(o=>o.items[0].id==='p36').items[0].code,'P36');
 });
 
 test('刪除補齊，舊訂單仍可出退貨並回補正確商品，還原附加最後',async()=>{
@@ -40,11 +40,11 @@ test('刪除補齊，舊訂單仍可出退貨並回補正確商品，還原附�
  assert.equal((await request('products?channel=customer','GET',undefined,false)).data.some(p=>p.id==='p198'),false);
  assert.equal((await request('orders','POST',{requestId:'deleted-stale',channel:'customer',name:'測試',phone:'0900000000',items:[{id:'p198',qty:1,price:p.price}]},false)).status,409);
  assert.equal((await request('admin/products/p198','PATCH',{...p,price:1})).status,409);
- let o=(await request('staff/orders','GET',undefined,false)).data.find(o=>o.items[0].id==='p198');
- o=(await request('staff/orders/'+o.id,'PATCH',{revision:o.revision,action:'ship'},false)).data;
- o=(await request('staff/orders/'+o.id,'PATCH',{revision:o.revision,action:'return',items:[{id:'p198',qty:1}]},false)).data;
+ let o=(await request('staff/orders','GET',undefined,true)).data.find(o=>o.items[0].id==='p198');
+ o=(await request('staff/orders/'+o.id,'PATCH',{revision:o.revision,action:'ship'},true)).data;
+ o=(await request('staff/orders/'+o.id,'PATCH',{revision:o.revision,action:'return',items:[{id:'p198',qty:1}]},true)).data;
  assert.equal(o.returns[0].code,'P198');assert.equal((await find('p198')).stock,oldStock+1);assert.equal((await find('p199')).stock,10);
- const original=(await find('p36')).stock;let other=(await request('staff/orders','GET',undefined,false)).data.find(o=>o.items[0].id==='p36');other=(await request('staff/orders/'+other.id,'PATCH',{revision:other.revision,action:'ship'},false)).data;await request('staff/orders/'+other.id,'PATCH',{revision:other.revision,action:'return',items:[{id:'p36',qty:1}]},false);assert.equal((await find('p36')).stock,original+1);
+ const original=(await find('p36')).stock;let other=(await request('staff/orders','GET',undefined,true)).data.find(o=>o.items[0].id==='p36');other=(await request('staff/orders/'+other.id,'PATCH',{revision:other.revision,action:'ship'},true)).data;await request('staff/orders/'+other.id,'PATCH',{revision:other.revision,action:'return',items:[{id:'p36',qty:1}]},true);assert.equal((await find('p36')).stock,original+1);
  layout=await catalog();r=await request('admin/catalog/restore','POST',{id:'p198',revision:layout.revision});assert.equal(r.status,200);layout=r.data;contiguous(layout);p=layout.products.at(-1);assert.equal(p.id,'p198');assert.equal(p.code,'P200');assert.equal(p.stock,oldStock+1);assert.equal(p.customerUnit,'包');assert.equal(p.orderUnit,'箱');assert.equal(p.orderVisible,true);assert.equal(p.customerVisible,true);
 });
 
