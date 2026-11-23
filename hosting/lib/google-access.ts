@@ -13,7 +13,12 @@ export async function isAdmin(request:Request,db:D1Database,config:AccessConfig)
  const grant=await db.prepare("SELECT subject,email FROM api_grants WHERE hash=? AND expires>? AND provider='google' AND audience=?").bind(await digest(bearer),Date.now(),config.GOOGLE_CLIENT_ID).first<{subject:string;email:string}>();
  return !!grant?.subject&&!!grant?.email&&emailAllowed(grant.email,config);
 }
-export async function isStaff(request:Request,db:D1Database,config:AccessConfig){return isAdmin(request,db,{...config,ADMIN_EMAILS:[config.ADMIN_EMAILS,config.STAFF_EMAILS].filter(Boolean).join(',')});}
+export async function isStaff(request:Request,db:D1Database,config:AccessConfig){
+ if(!config.GOOGLE_CLIENT_ID)return false;
+ const token=request.headers.get('authorization')?.match(/^Bearer ([a-f0-9]{64})$/)?.[1];if(!token)return false;
+ const grant=await db.prepare("SELECT subject,email FROM api_grants WHERE hash=? AND expires>? AND provider IN ('google','google_staff') AND audience=?").bind(await digest(token),Date.now(),config.GOOGLE_CLIENT_ID).first<{subject:string;email:string}>();
+ return !!grant?.subject&&!!grant?.email&&emailAllowed(grant.email,{...config,ADMIN_EMAILS:[config.ADMIN_EMAILS,config.STAFF_EMAILS].filter(Boolean).join(',')});
+}
 export async function staffEmail(request:Request,db:D1Database){const token=request.headers.get('authorization')?.replace(/^Bearer /,'')||'';const row=await db.prepare('SELECT email FROM api_grants WHERE hash=?').bind(await digest(token)).first<{email:string}>();return row?.email||'';}
 export function allowedOrigin(request:Request){
  const origin=request.headers.get('origin');return !origin||origin===new URL(request.url).origin||origin===GITHUB_ORIGIN;
@@ -39,8 +44,9 @@ export async function googleLogin(db:D1Database,config:AccessConfig,body:any){
  if(!emailAllowed(email,{...config,ADMIN_EMAILS:[config.ADMIN_EMAILS,config.STAFF_EMAILS].filter(Boolean).join(',')}))throw Object.assign(Error('此 Google 帳號沒有管理權限，請改用管理員的 Gmail 帳號'),{status:403});
  const challenge=await db.prepare('DELETE FROM google_login_challenges WHERE hash=? AND challenge=? AND expires>? RETURNING hash').bind(await digest(payload.nonce),await pkce(body.verifier),Date.now()).first();
  if(!challenge)return null;
- const token=randomToken(),expires=Date.now()+8*3600000;
- await db.batch([db.prepare('DELETE FROM api_grants WHERE expires<=?').bind(Date.now()),db.prepare('INSERT INTO api_grants(hash,expires,provider,subject,email,audience) VALUES(?,?,?,?,?,?)').bind(await digest(token),expires,'google',payload.sub,email,config.GOOGLE_CLIENT_ID)]);
+ const remembered=body.rememberStaff===true;
+ const token=randomToken(),expires=Date.now()+(remembered?30*24:8)*3600000;
+ await db.batch([db.prepare('DELETE FROM api_grants WHERE expires<=?').bind(Date.now()),db.prepare('INSERT INTO api_grants(hash,expires,provider,subject,email,audience) VALUES(?,?,?,?,?,?)').bind(await digest(token),expires,remembered?'google_staff':'google',payload.sub,email,config.GOOGLE_CLIENT_ID)]);
  return {token,expires,email};
 }
 export async function revoke(request:Request,db:D1Database){const token=request.headers.get('authorization')?.replace(/^Bearer /,'');if(token)await db.prepare('DELETE FROM api_grants WHERE hash=?').bind(await digest(token)).run();}

@@ -74,7 +74,7 @@ export async function handleBackstage(request:Request,db:D1Database,config:Acces
   if((path==='/api/admin/staff'||path==='/api/admin/staff/delete')&&method==='POST'){
    const email=typeof b.email==='string'?b.email.trim().toLowerCase():'';if(email.length>254||!(/^[^\s@]+@[^\s@]+\.[^\s@]+$/).test(email))fail(400,'請輸入有效 Google 信箱');
    if((config.ADMIN_EMAILS||'').split(',').map(e=>e.trim().toLowerCase()).includes(email))fail(400,'管理員已具有員工權限，不需新增或移除');
-   if(path.endsWith('/delete'))await db.prepare('DELETE FROM staff_members WHERE email=?').bind(email).run();else await db.prepare('INSERT OR IGNORE INTO staff_members(email,created_at) VALUES(?,?)').bind(email,new Date().toISOString()).run();return reply(200,{ok:true});
+   if(path.endsWith('/delete'))await db.batch([db.prepare('DELETE FROM staff_members WHERE email=?').bind(email),db.prepare('DELETE FROM api_grants WHERE email=?').bind(email)]);else await db.prepare('INSERT OR IGNORE INTO staff_members(email,created_at) VALUES(?,?)').bind(email,new Date().toISOString()).run();return reply(200,{ok:true});
   }
   if(path==='/api/auth/exchange')fail(410,'請改使用 Google 帳號登入');
   if(path==='/api/auth/google/start'&&method==='POST')return reply(200,await startGoogleLogin(db,config,b));

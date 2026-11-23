@@ -49,6 +49,7 @@ test('管理員可加入與移除員工白名單；我的訂單依驗證帳號�
  assert.equal((await request('/api/admin/staff/delete','POST',{email:'owner@example.test'})).status,400);
  assert.equal((await request('/api/admin/staff/delete','POST',{email})).status,200);
  assert.equal((await worker('/api/staff/my-orders')).status,401);
+ assert.equal(sql.prepare('SELECT count(*) AS n FROM api_grants WHERE email=?').get(email).n,0);
  // Remove this fixture before catalog/order count assertions in the legacy suite.
  sql.prepare('DELETE FROM order_records WHERE id=?').run(o.data.id);
 });
@@ -143,6 +144,15 @@ test('Google 登入驗證簽章、audience、issuer、驗證信箱、nonce、PKC
   const legacyToken='d'.repeat(64);await db.prepare('INSERT INTO api_grants(hash,expires) VALUES(?,?)').bind(await digest(legacyToken),Date.now()+3600000).run();
   const legacy=await handleBackstage(new Request('https://site.example/api/admin/orders',{headers:{Authorization:'Bearer '+legacyToken}}),db,config);assert.equal(legacy.status,401);
   const missing=await handleBackstage(new Request('https://site.example/api/auth/google/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({challenge})}),db,{});assert.equal(missing.status,503);
+  // Remembered employee grants remain staff-only, including for the administrator.
+  const rememberStart=await request('/api/auth/google/start','POST',{challenge},false);
+  const remembered=await request('/api/auth/google','POST',{credential:await sign({nonce:rememberStart.data.nonce}),verifier,rememberStaff:true},false);
+  assert.equal(remembered.status,200);assert.ok(remembered.data.expires>Date.now()+29*24*3600000);
+  const staffRequest=path=>handleBackstage(new Request('https://site.example'+path,{headers:{Authorization:'Bearer '+remembered.data.token}}),db,config);
+  assert.equal((await staffRequest('/api/staff/access')).status,200);
+  assert.equal((await staffRequest('/api/admin/orders')).status,401);
+  await handleBackstage(new Request('https://site.example/api/logout',{method:'POST',headers:{Authorization:'Bearer '+remembered.data.token,'Content-Type':'application/json'},body:'{}'}),db,config);
+  assert.equal((await staffRequest('/api/staff/access')).status,401);
   const expired=await request('/api/auth/google/start','POST',{challenge},false);await db.prepare('UPDATE google_login_challenges SET expires=0 WHERE hash=?').bind(await digest(expired.data.nonce)).run();assert.equal((await login(await sign({nonce:expired.data.nonce}))).status,401);
  }finally{globalThis.fetch=originalFetch;}
 });
