@@ -102,3 +102,21 @@ test('四項時價品項保留單位，廠電費納入結帳與圖片，舊帳�
  assert.equal((await post({person:who,utilities:1.001})).status,400);
  assert.equal((await request('/api/admin/backup')).data.billing.bills.find(i=>i.id===b.id).utilitiesCents,2550);
 });
+
+test('已刪除批發人可永久移除，無法還原或重新浮現，歷史帳款完全保留',async()=>{
+ const who={name:'永久移除測試',phone:'0912345678'},key=JSON.stringify([who.name,who.phone]);
+ const original=(await post({person:who,rent:10})).data;
+ const state=async()=>(await request('/api/admin/billing')).data;
+ const action=async(name,extra={})=>request('/api/admin/billing/'+name,'POST',{person:who,revision:(await state()).revision,requestId:'purge-test-'+(++counter),...extra});
+ assert.equal((await request('/api/admin/billing/purge-person','POST',{},false)).status,401);
+ assert.equal((await action('purge-person',{confirmPermanent:true})).status,404);
+ assert.equal((await action('delete-person')).status,200);
+ const before=await state(),orders=(await request('/api/admin/orders')).data;
+ assert.equal((await action('purge-person')).status,400);
+ assert.equal((await request('/api/admin/billing/purge-person','POST',{person:who,revision:before.revision-1,requestId:'purge-stale-test',confirmPermanent:true})).status,409);
+ assert.equal((await action('purge-person',{confirmPermanent:true})).status,200);
+ const after=await state();assert.equal(after.deletedPeople.some(p=>p.key===key),false);assert.ok(after.removedPersonKeys.includes(key));
+ assert.deepEqual(after.bills,before.bills);assert.deepEqual(after.manualReturns,before.manualReturns);assert.deepEqual((await request('/api/admin/orders')).data,orders);assert.deepEqual(after.bills.find(b=>b.id===original.id),original);
+ assert.equal((await action('restore-person')).status,409);assert.equal((await action('delete-person')).status,409);assert.equal((await post({person:who,rent:10})).status,409);
+ assert.equal(JSON.parse(sql.prepare('SELECT body FROM billing_people WHERE key=?').get(key).body).person,undefined);
+});
