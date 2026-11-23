@@ -247,5 +247,8 @@ async function refreshCloudProducts(){if(cloudSaving||cloudRefreshing)return;clo
 const cloudTools=document.createElement('div');cloudTools.style.cssText='display:flex;gap:12px;align-items:center;margin:8px 0 16px';const refreshButton=document.createElement('button');refreshButton.type='button';refreshButton.className='secondary';refreshButton.id='cloudRefresh';refreshButton.textContent='更新商品 ↻';refreshButton.onclick=()=>refreshCloudProducts();cloudTools.append(refreshButton);const syncText=document.createElement('span');syncText.textContent='商品、庫存每 20 秒同步';syncText.style.cssText='font-size:16px;color:#64748b';cloudTools.append(syncText);$('resultCount').after(cloudTools);
 setInterval(()=>{if(!document.hidden&&!document.querySelector('.modal:not([hidden])')&&!document.activeElement?.matches('[data-qty]'))refreshCloudProducts();},20000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!document.querySelector('.modal:not([hidden])'))refreshCloudProducts();});
+function openHistoryFromLink(){if(new URLSearchParams(location.search).get('view')==='history'||location.hash==='#history')showHistory();}
+window.addEventListener('hashchange',openHistoryFromLink);
+openHistoryFromLink();
 
 </script></body></html>
