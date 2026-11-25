@@ -558,22 +558,21 @@
           <div class="print-total">總金額：${money(total)}</div>
         </div>`;
     }
-    function wrapCanvasText(ctx,text,x,y,maxWidth,lineHeight){
-      const words=String(text).split("");
+    function canvasTextLines(ctx,text,maxWidth){
       let line="";
       const lines=[];
-      words.forEach(ch=>{
-        const test=line+ch;
-        if(ctx.measureText(test).width>maxWidth && line){
-          lines.push(line);
-          line=ch;
-        }else{
-          line=test;
-        }
-      });
+      for(const ch of Array.from(String(text))){
+        const next=line+ch;
+        if(line && ctx.measureText(next).width>maxWidth){lines.push(line);line=ch;}
+        else line=next;
+      }
       lines.push(line);
+      return lines;
+    }
+    function wrapCanvasText(ctx,text,x,y,maxWidth,lineHeight){
+      const lines=canvasTextLines(ctx,text,maxWidth);
       lines.forEach((part,index)=>ctx.fillText(part,x,y+index*lineHeight));
-      return Math.max(1,lines.length)*lineHeight;
+      return lines.length*lineHeight;
     }
     function drawShareCanvas(){
       const rows=pendingOrder.items.map(item=>({
@@ -587,13 +586,15 @@
       const padding=40;
       const nameWidth=430;
       const lineHeight=30;
-      const rowHeights=rows.map(row=>{
-        const probe=document.createElement("canvas").getContext("2d");
-        probe.font='26px "Microsoft JhengHei", sans-serif';
-        const textWidth=probe.measureText(row.name).width;
-        return Math.max(50,Math.ceil(textWidth/nameWidth)*lineHeight+18);
-      });
-      const height=230+rowHeights.reduce((a,b)=>a+b,0)+90;
+      const probe=document.createElement("canvas").getContext("2d");
+      probe.font='26px "Microsoft JhengHei", sans-serif';
+      const rowHeights=rows.map(row=>Math.max(50,canvasTextLines(probe,row.name,nameWidth).length*lineHeight+18));
+      const tableTop=pendingOrder.note?214:180;
+      const tableHeaderHeight=48;
+      const totalGap=18;
+      const totalHeight=64;
+      // Include the actual table position, total box and bottom margin in the PNG.
+      const height=tableTop+tableHeaderHeight+rowHeights.reduce((a,b)=>a+b,0)+totalGap+totalHeight+padding;
       const canvas=document.createElement("canvas");
       canvas.width=width;
       canvas.height=height;
@@ -610,7 +611,6 @@
       ctx.fillText(`大名：${pendingOrder.name}`,padding,94);
       ctx.fillText(`開單時間：${pendingOrder.createdAt}`,padding,132);
       if(pendingOrder.note) ctx.fillText(`備註：${pendingOrder.note}`,padding,170);
-      const tableTop=pendingOrder.note?214:180;
       const cols=[padding,padding+500,padding+660,padding+780,width-padding];
       ctx.strokeStyle="#333333";
       ctx.lineWidth=2;
@@ -624,7 +624,7 @@
       ctx.fillText("數量",cols[3]-12,tableTop+10);
       ctx.fillText("總額",cols[4]-12,tableTop+10);
       ctx.textAlign="left";
-      let y=tableTop+48;
+      let y=tableTop+tableHeaderHeight;
       ctx.font='26px "Microsoft JhengHei", sans-serif';
       rows.forEach((row,index)=>{
         const h=rowHeights[index];
@@ -641,9 +641,9 @@
       ctx.font='bold 32px "Microsoft JhengHei", sans-serif';
       ctx.textAlign="right";
       ctx.fillStyle="#fff7ed";
-      ctx.fillRect(padding,y+18,width-padding*2,64);
+      ctx.fillRect(padding,y+totalGap,width-padding*2,totalHeight);
       ctx.strokeStyle="#f59e0b";
-      ctx.strokeRect(padding,y+18,width-padding*2,64);
+      ctx.strokeRect(padding,y+totalGap,width-padding*2,totalHeight);
       ctx.fillStyle="#9a3412";
       ctx.fillText(`總金額：${money(total)}`,width-padding-18,y+34);
       return canvas;

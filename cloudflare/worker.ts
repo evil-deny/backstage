@@ -1,6 +1,7 @@
 import {handleBackstage} from '../hosting/lib/backstage';
 import {isAdmin,allowedOrigin,corsHeaders,type AccessConfig} from '../hosting/lib/google-access';
 import {createBackup,readBackup,snapshotDatabase} from './snapshot.mjs';
+import {backupHealth} from './backup-health.mjs';
 
 type Env=AccessConfig&{DB:D1Database;BACKUPS:D1Database;MIGRATION_READ_ONLY?:string};
 const reply=(request:Request,data:unknown,status=200,headers:Record<string,string>={})=>Response.json(data,{status,headers:{'Cache-Control':'no-store','X-Content-Type-Options':'nosniff',...corsHeaders(request),...headers}});
@@ -9,6 +10,10 @@ const worker={
   const url=new URL(request.url),path=url.pathname;
   if(!allowedOrigin(request))return reply(request,{error:'不允許此來源操作'},403);
   if(request.method==='OPTIONS')return new Response(null,{status:204,headers:corsHeaders(request)});
+  if(path==='/api/backup-health'&&request.method==='GET'){
+   try{const health=await backupHealth(env.BACKUPS);return reply(request,health,health.ok?200:503);}
+   catch{return reply(request,{ok:false,code:'unavailable'},503);}
+  }
   if(path==='/api/health'){const row=await env.DB.prepare('SELECT COUNT(*) AS n FROM inventory').first<{n:number}>();return reply(request,{ok:true,host:'owner-cloudflare',databaseReady:!!row?.n});}
   if(path.startsWith('/api/admin/backups')||path==='/api/admin/backup/full'){
    if(!await isAdmin(request,env.DB,env))return reply(request,{error:'請先使用 Google 帳號登入'},401);
