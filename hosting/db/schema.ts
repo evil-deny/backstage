@@ -5,6 +5,7 @@ export const inventory=sqliteTable('inventory',{
  orderVisible:integer('order_visible').notNull(),customerVisible:integer('customer_visible').notNull(),revision:integer('revision').notNull(),
 },t=>[check('stock_nonnegative',sql`${t.stock} IS NULL OR ${t.stock} >= 0`),check('price_nonnegative',sql`${t.price} >= 0`),check('order_price_nonnegative',sql`${t.orderPrice} IS NULL OR ${t.orderPrice} >= 0`)]);
 export const orders=sqliteTable('order_records',{id:text('id').primaryKey(),requestId:text('request_id').notNull().unique(),body:text('body').notNull(),revision:integer('revision').notNull()});
+export const orderTombstones=sqliteTable('order_tombstones',{requestId:text('request_id').primaryKey(),orderId:text('order_id').notNull(),purgedAt:text('purged_at').notNull()});
 export const guards=sqliteTable('mutation_guards',{id:text('id').primaryKey(),ok:integer('ok').notNull()},t=>[check('mutation_must_succeed',sql`${t.ok} = 1`)]);
 export const catalogState=sqliteTable('catalog_state',{id:text('id').primaryKey(),revision:integer('revision').notNull().default(0)});
 export const billingState=sqliteTable('billing_state',{id:text('id').primaryKey(),revision:integer('revision').notNull().default(0)});

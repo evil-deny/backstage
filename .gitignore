@@ -2,3 +2,8 @@ node_modules/
 data/*.sqlite*
 .env
 *.log
+cloudflare/node_modules/
+cloudflare/.wrangler/
+cloudflare/dist/
+cloudflare/.dev.vars*
+cloudflare/backups/

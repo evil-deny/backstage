@@ -1,0 +1,18 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "fuyuan-api",
+  "main": "worker.ts",
+  "account_id": "b3309a0ca47ead7b703b6dfaaf02b4c2",
+  "compatibility_date": "2026-05-15",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "preview_urls": false,
+  "alias": { "jose": "./node_modules/jose/dist/webapi/index.js" },
+  "d1_databases": [
+    { "binding": "DB", "database_name": "fuyuan-production", "database_id": "9a850216-1aeb-4e45-957e-1deeb42bf1a4" },
+    { "binding": "BACKUPS", "database_name": "fuyuan-backups", "database_id": "99f15e21-fbbd-4382-91d8-207f02138a75" }
+  ],
+  "vars": { "ADMIN_EMAILS": "gooddenny931213@gmail.com", "GOOGLE_CLIENT_ID": "316864349868-fl1s387dabtiftil9iettd2h2b9emf2l.apps.googleusercontent.com", "MIGRATION_READ_ONLY": "false" },
+  "triggers": { "crons": ["10 19 * * *"] },
+  "observability": { "enabled": true }
+}

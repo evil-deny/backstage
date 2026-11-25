@@ -10,17 +10,15 @@
 - 員工開單：<https://evil-deny.github.io/order/>
 - 顧客訂購：<https://evil-deny.github.io/customer/>
 
-三個前端都連到同一個雲端 API 與 D1 資料庫。後台儲存價格、品項、可售庫存、order/customer 各自的顯示狀態後，order 每 15 秒、customer 每 20 秒更新，切回頁面也會更新；送單時一律由伺服器再驗證。日常商品維護不需要修改或推送三個 repo。
+正式 API 已搬到店家自己持有的 Cloudflare 帳號：<https://fuyuan-api.fuyuan-gooddenny.workers.dev>。運行不依賴 Plus／Sites。每日備份、發布與還原步驟見 [Cloudflare 維護說明](cloudflare/README.md)。三個前端都連到同一個雲端 API 與 D1 資料庫。後台儲存價格、品項、可售庫存、order/customer 各自的顯示狀態後，order 每 15 秒、customer 每 20 秒更新，切回頁面也會更新；送單時一律由伺服器再驗證。日常商品維護不需要修改或推送三個 repo。
 
 員工訂購、出貨與退貨改用 Google 白名單登入，ADMIN_EMAILS 管理員及 STAFF_EMAILS 員工可使用；只有 ADMIN_EMAILS 能進管理後台。顧客訂購仍免登入。員工「送出訂單並分享圖片」先送單成功再分享；取消分享不撤回訂單，同一明細重試不重複開單。正式後台使用 Google Identity Services「使用 Google 帳號登入」，伺服器以 Google 公鑰驗證 RS256 簽章、issuer、GOOGLE_CLIENT_ID audience、有效時間、已驗證的 email 與 ADMIN_EMAILS 管理員白名單。Google 的 sub 為帳號識別，nonce 與瀏覽器 PKCE verifier 綁定並一次性消耗，阻擋重播與登入 CSRF。
 
 登入後取得八小時 API 授權，伺服器只儲存 token 雜湊及 Google 帳號／用戶端關聯，原始 token 僅存於當前分頁 sessionStorage。登出會撤銷 API 授權；舊版 ChatGPT 授權及平台登入標頭不再授予管理權限。Google 用戶端只需身分登入，沒有 Gmail 郵件存取權，也不使用 OAuth 用戶端密鑰。
 
-公開範圍為各入口商品目錄與員工／顧客送單。員工免登入入口不驗證身份，任何取得網址的人都可查看批發價及以員工來源送單。依店家要求，員工訂單清單、聯絡資料及出貨／退貨操作透過公開 `/api/staff/orders` 提供；商品修改、備份、分析與 `/api/admin/*` 一律需要管理權限。API 只允許此 Site 與 `https://evil-deny.github.io` 的瀏覽器來源；公開跨來源不代表後台管理權限。
+公開範圍為顧客商品目錄與顧客送單。員工訂購、訂單清單、出貨及退貨需通過 Google 白名單驗證；商品管理、備份、永久刪除及所有管理 API 只開放管理員。
 
-`index.html` 與 `assets/` 是 GitHub Pages 後台；`shared/cloud-sync.js` 是三個 repo 共用的連線來源。`hosting/` 保存 Sites API 部署的完整來源，雲端資料庫跨版本保存。API 網址仍是 <https://fuyuan-backstage.syrupydock1.chatgpt.site>，但使用者操作入口保留在原本 GitHub 網址；直接造訪 API 網址也保留管理介面。
-
-`hosting/` 修改須透過 Sites 建置／發布，單純推送 GitHub 不會更新 API。前端 GitHub Pages 從 main 根目錄發布。部署需先讓受保護的 API 版本與新增資料表生效，再公開 API，避免公開舊版管理權限。
+正式前端為 index.html 與 ssets/，GitHub Pages 從 main 根目錄發布。cloudflare/ 是目前的獨立 API 與定期備份服務；hosting/lib/ 保存共用業務邏輯。舊 Sites API 只保留相容轉送，正式三個 GitHub 網站直接使用 Cloudflare。修改後端後需在 Cloudflare 發布，單純推送 GitHub 不會自動發布後端。
 
 原先瀏覽器內的舊訂單與庫存調整不會自動匯入或覆寫雲端。既有資料保留於原瀏覽器；分析以共用資料庫中實際記錄的訂單為準。根目錄 Node.js 版本使用獨立本機 SQLite，供獨立自架與測試，與正式共用資料庫不同步。
 
@@ -31,7 +29,7 @@
 | 路徑 | 用途 | 權限 |
 | --- | --- | --- |
 | `/` | 營運總覽、商品管理、訂單、商品分析、CSV、備份 | 管理員登入 |
-| `/order` | 員工開單 | 訂購、全部訂單、出貨與退貨免登入 |
+| `/order` | 員工開單 | Google 白名單登入後使用訂購、訂單、出貨及退貨 |
 | `/customer` | 顧客訂購、確認明細、送單、複製與 LINE 聯絡 | 公開訂購；顧客畫面不提供其他訂單清單 |
 
 兩個整合入口使用相同商品與庫存；可獨立控制商品是否在 order、customer 顯示。修改後，新開頁面、切回頁面或按「更新商品」即可讀取；送單時伺服器再次驗證價格、上下架與庫存。後台按「重新整理」取得其他裝置的新資料。

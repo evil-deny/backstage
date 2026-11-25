@@ -1,7 +1,7 @@
 /* Shared connection for the three Fuyuan GitHub Pages interfaces. No secrets. */
 (() => {
   'use strict';
-  const API='https://fuyuan-backstage.syrupydock1.chatgpt.site';
+  const API='https://fuyuan-api.fuyuan-gooddenny.workers.dev';
   const ADMIN='https://evil-deny.github.io/backstage/';
   const SESSION='fuyuan-google-api-grant-v1';
   const STAFF_SESSION='fuyuan-partner-google-grant-v1';

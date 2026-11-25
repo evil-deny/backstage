@@ -21,7 +21,7 @@ export async function isStaff(request:Request,db:D1Database,config:AccessConfig)
 }
 export async function staffEmail(request:Request,db:D1Database){const token=request.headers.get('authorization')?.replace(/^Bearer /,'')||'';const row=await db.prepare('SELECT email FROM api_grants WHERE hash=?').bind(await digest(token)).first<{email:string}>();return row?.email||'';}
 export function allowedOrigin(request:Request){
- const origin=request.headers.get('origin');return !origin||origin===new URL(request.url).origin||origin===GITHUB_ORIGIN;
+ const origin=request.headers.get('origin');return !origin||origin===new URL(request.url).origin||origin===GITHUB_ORIGIN||origin==='https://fuyuan-backstage.syrupydock1.chatgpt.site';
 }
 export function corsHeaders(request:Request):Record<string,string>{
  const origin=request.headers.get('origin');return origin&&allowedOrigin(request)?{'Access-Control-Allow-Origin':origin,'Access-Control-Allow-Methods':'GET, POST, PATCH, OPTIONS','Access-Control-Allow-Headers':'Content-Type, Authorization','Access-Control-Max-Age':'600','Vary':'Origin'}:{};

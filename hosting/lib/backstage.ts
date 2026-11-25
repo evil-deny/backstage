@@ -1,4 +1,5 @@
 import catalog from '../data/catalog.json';
+import {purgeOrder} from './order-purge';
 import {billingData,billingAction} from './billing';
 import {catalogOrder} from '../public/catalog-order.js';
 import {movedCatalog} from '../public/catalog-layout.js';
@@ -46,7 +47,7 @@ export function createRepository(db:D1Database){
    return decode(result[1].results[0]);
   },
   async updateProduct(p:Product){const r=await db.prepare('UPDATE inventory SET body=?,stock=?,price=?,order_price=?,order_visible=?,customer_visible=?,revision=revision+1 WHERE id=? AND revision=?').bind(JSON.stringify(p),p.stock,p.price,p.orderPrice,p.orderVisible?1:0,p.customerVisible?1:0,p.id,p.revision).run();if(!r.meta.changes)fail(409,'商品已在其他視窗更新，請重新整理');return product(p.id);},
-  async findRequest(id:string):Promise<Order|null>{const row=await db.prepare('SELECT body FROM order_records WHERE request_id=?').bind(id).first<any>();return row?JSON.parse(row.body):null;},
+  async findRequest(id:string):Promise<Order|null>{const row=await db.prepare('SELECT body FROM order_records WHERE request_id=?').bind(id).first<any>();if(row)return JSON.parse(row.body);if(await db.prepare('SELECT order_id FROM order_tombstones WHERE request_id=?').bind(id).first())fail(410,'此訂單已永久刪除，請建立新的訂單');return null;},
   async place(o:Order,requestId:string){const batch=crypto.randomUUID(),statements:D1PreparedStatement[]=[];for(const [index,i]of o.items.entries()){if(i.custom)continue;statements.push(db.prepare(`UPDATE inventory SET stock=CASE WHEN stock IS NULL THEN NULL ELSE stock-? END,revision=revision+1 WHERE id=? AND ${o.channel==='order'?'COALESCE(order_price,price)':'price'}=? AND ${o.channel==='order'?'order_visible':'customer_visible'}=1 AND (stock IS NULL OR stock>=?) AND COALESCE(json_extract(body,'$.${o.channel==='order'?'orderUnit':'customerUnit'}'),'件')=?`).bind(i.qty,i.id,i.price,i.qty,i.unit??'件'),guard(batch+'-'+index));}statements.push(db.prepare('INSERT INTO order_records VALUES(?,?,?,?)').bind(o.id,requestId,JSON.stringify(o),1),db.prepare('DELETE FROM mutation_guards WHERE id LIKE ?').bind(batch+'%'));await db.batch(statements);},
   async transition(o:Order,revision:number,restock:Item[]){const batch=crypto.randomUUID();const statements=[db.prepare('UPDATE order_records SET body=?,revision=revision+1 WHERE id=? AND revision=?').bind(JSON.stringify(o),o.id,revision),guard(batch)];for(const i of restock.filter(i=>!i.custom))statements.push(db.prepare('UPDATE inventory SET stock=CASE WHEN stock IS NULL THEN NULL ELSE stock+? END,revision=revision+1 WHERE id=?').bind(i.qty,i.id));statements.push(db.prepare('DELETE FROM mutation_guards WHERE id=?').bind(batch));try{await db.batch(statements);}catch{fail(409,'訂單已更新，請重新整理');}return order(o.id);},
  };
@@ -114,7 +115,8 @@ export async function handleBackstage(request:Request,db:D1Database,config:Acces
   if((path==='/api/admin/orders'||path==='/api/staff/orders')&&method==='GET')return reply(200,await repo.orders());
   if((path.startsWith('/api/admin/orders/')||path.startsWith('/api/staff/orders/'))&&method==='PATCH'){
    const o=await repo.order(decodeURIComponent(path.split('/').at(-1)!));if(b.revision!==o.revision)fail(409,'訂單已更新，請重新整理');let restock:Item[]=[];
-   if(['delete','restoreOrder'].includes(b.action)&&!admin)fail(403,'只有管理員可以刪除或還原訂單');
+   if(['delete','restoreOrder','purge'].includes(b.action)&&!admin)fail(403,'只有管理員可以刪除或還原訂單');
+   if(b.action==='purge')return reply(200,await purgeOrder(db,o,b.revision,b.confirmPermanent));
    if(o.deletedAt&&b.action!=='restoreOrder')fail(409,'訂單已刪除，請先還原');
    if(b.action==='delete'){const now=new Date().toISOString();o.deletedArchivedAt=o.archivedAt;o.deletedAt=now;o.archivedAt=now;if(['new','picking'].includes(o.status)){o.status='cancelled';restock=o.items;}}
    else if(b.action==='restoreOrder'&&o.deletedAt){if(o.deletedArchivedAt)o.archivedAt=o.deletedArchivedAt;else delete o.archivedAt;delete o.deletedAt;delete o.deletedArchivedAt;}
