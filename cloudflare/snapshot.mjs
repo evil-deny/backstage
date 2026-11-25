@@ -1,3 +1,4 @@
+import {erasurePlan,hashId} from '../hosting/lib/order-erasure.mjs';
 export const BUSINESS_TABLES=['inventory','order_records','catalog_state','billing_state','billing_invoices','billing_claims','billing_manual_returns','billing_people','staff_members','order_tombstones'];
 export const ALL_TABLES=[...BUSINESS_TABLES,'api_grants','connection_tickets','google_login_challenges','mutation_guards'];
 const quoteId=value=>'"'+value.replaceAll('"','""')+'"';
@@ -11,7 +12,7 @@ export async function snapshotDatabase(db){
  // D1 batch executes the reads in a single transaction, keeping stock and orders consistent.
  const results=await db.batch(statements),tables={};
  BUSINESS_TABLES.forEach((name,index)=>{tables[name]={columns:results[index*2+1].results.map(c=>c.name),rows:results[index*2+2].results};});
- return {format:'fuyuan-d1-snapshot',version:1,exportedAt:new Date().toISOString(),schemaSql:results[0].results.map(r=>r.sql+';').join('\n'),tables};
+ return redactSnapshot({format:'fuyuan-d1-snapshot',version:1,exportedAt:new Date().toISOString(),schemaSql:results[0].results.map(r=>r.sql+';').join('\n'),tables},tables.order_tombstones.rows);
 }
 
 export function validateSnapshot(snapshot){
@@ -41,7 +42,7 @@ export async function createBackup(db,backups){
   if(bytes>24*1024*1024)throw Error('完整備份超過 24 MB，請改用 D1 SQL 匯出並調整備份方式');
   const parts=backupParts(body);
   for(let start=0;start<parts.length;start+=20)await backups.batch(parts.slice(start,start+20).map((part,index)=>backups.prepare('INSERT INTO backup_chunks(backup_id,part,body) VALUES(?,?,?)').bind(id,start+index,part)));
-  const hash=await sha256(body),counts=Object.fromEntries(BUSINESS_TABLES.map(n=>[n,snapshot.tables[n].rows.length]));
+  const hash=await sha256(body),counts={...Object.fromEntries(BUSINESS_TABLES.map(n=>[n,snapshot.tables[n].rows.length])),_redactions:await redactionVersion(snapshot.tables.order_tombstones.rows)};
   const written=(await backups.prepare('SELECT body FROM backup_chunks WHERE backup_id=? ORDER BY part').bind(id).all()).results.map(r=>r.body).join('');
   if(await sha256(written)!==hash)throw Error('備份完整性驗證失敗');
   const completed=new Date().toISOString();
@@ -51,14 +52,56 @@ export async function createBackup(db,backups){
    backups.prepare('DELETE FROM backup_chunks WHERE backup_id IN (SELECT id FROM backup_runs WHERE started_at<? AND id<>?)').bind(cutoff,id),
    backups.prepare('DELETE FROM backup_runs WHERE started_at<? AND id<>?').bind(cutoff,id)
   ]);
-  return {id,completedAt:completed,sha256:hash,byteLength:bytes,counts};
- }catch(error){await backups.prepare("UPDATE backup_runs SET status='failed',error=? WHERE id=?").bind(String(error.message||error).slice(0,300),id).run();throw error;}
+  // A purge may have committed while this snapshot was being written.
+  await sanitizeBackup(db,backups,id);
+  const final=await backups.prepare('SELECT sha256,byte_length,counts FROM backup_runs WHERE id=?').bind(id).first();
+  return {id,completedAt:completed,sha256:final.sha256,byteLength:final.byte_length,counts:JSON.parse(final.counts)};
+ }catch(error){await backups.prepare('DELETE FROM backup_chunks WHERE backup_id=?').bind(id).run();await backups.prepare("UPDATE backup_runs SET status='failed',error=? WHERE id=?").bind(String(error.message||error).slice(0,300),id).run();throw error;}
 }
 
-export async function readBackup(backups,id){
+export async function readBackup(backups,id,db=null){
  const record=await backups.prepare("SELECT * FROM backup_runs WHERE id=? AND status='complete'").bind(id).first();if(!record)throw Error('找不到完整備份');
  const parts=(await backups.prepare('SELECT part,body FROM backup_chunks WHERE backup_id=? ORDER BY part').bind(id).all()).results;
  if(parts.length!==record.chunk_count||parts.some((part,index)=>part.part!==index))throw Error('備份分段不完整');
  const body=parts.map(r=>r.body).join('');if(await sha256(body)!==record.sha256)throw Error('備份校驗碼不符');
- return validateSnapshot(JSON.parse(body));
+ const snapshot=validateSnapshot(JSON.parse(body));return db?redactSnapshot(snapshot,await purgeMarkers(db)):snapshot;
+}
+
+export async function purgeMarkers(db){return (await db.prepare('SELECT request_id,order_id,purged_at FROM order_tombstones ORDER BY request_id').all()).results;}
+export async function redactionVersion(markers){return sha256(JSON.stringify(markers.map(m=>[m.request_id,m.order_id]).sort((a,b)=>a[0].localeCompare(b[0]))));}
+export async function redactSnapshot(snapshot,markers){
+ if(!markers.length)return snapshot;
+ const normalized=await Promise.all(markers.map(async m=>({request_id:m.request_id.startsWith('sha256:')?m.request_id:await hashId(m.request_id),order_id:m.order_id.startsWith('sha256:')?m.order_id:await hashId(m.order_id),purged_at:m.purged_at})));
+ const hashes=new Set(normalized.map(m=>m.order_id)),t=snapshot.tables;
+ const invoices=t.billing_invoices.rows.map(r=>({...JSON.parse(r.body),id:r.id})),manual=t.billing_manual_returns.rows.map(r=>JSON.parse(r.body));
+ const ids=new Set([...t.order_records.rows.map(r=>r.id),...t.billing_claims.rows.map(r=>r.order_id),...invoices.flatMap(b=>[...(b.orders||[]).map(o=>o.id),...(b.lines||[]).map(l=>l.orderId),...(b.credits||[]).map(c=>c.orderId)]).filter(Boolean)]);
+ const targets=(await Promise.all([...ids].map(async id=>hashes.has(await hashId(id))?id:null))).filter(Boolean);
+ const plan=erasurePlan(targets,invoices,manual,t.billing_claims.rows),deletedBills=new Set(plan.invoiceIds),deletedReturns=new Set(plan.manualReturnIds),deletedOrders=new Set(targets);
+ t.order_records.rows=t.order_records.rows.filter(r=>!deletedOrders.has(r.id));
+ t.billing_invoices.rows=t.billing_invoices.rows.filter(r=>!deletedBills.has(r.id));
+ t.billing_claims.rows=t.billing_claims.rows.filter(r=>!deletedBills.has(r.invoice_id)&&!deletedOrders.has(r.order_id));
+ t.billing_manual_returns.rows=t.billing_manual_returns.rows.filter(r=>!deletedReturns.has(r.id));
+ // Preserve only irreversible hashes, never the original number or request identifier.
+ const old=await Promise.all(t.order_tombstones.rows.map(async m=>({request_id:m.request_id.startsWith('sha256:')?m.request_id:await hashId(m.request_id),order_id:m.order_id.startsWith('sha256:')?m.order_id:await hashId(m.order_id),purged_at:m.purged_at})));
+ t.order_tombstones.rows=[...new Map([...old,...normalized].map(m=>[m.request_id,m])).values()].sort((a,b)=>a.request_id.localeCompare(b.request_id));
+ return snapshot;
+}
+export async function pendingBackupCleanup(db,backups){
+ const markers=await purgeMarkers(db),version=await redactionVersion(markers);
+ const rows=(await backups.prepare("SELECT id,status,counts FROM backup_runs WHERE status IN ('complete','running') ORDER BY started_at").all()).results;
+ return {ids:markers.length?rows.filter(r=>r.status==='complete'&&JSON.parse(r.counts||'{}')._redactions!==version).map(r=>r.id):[],running:rows.filter(r=>r.status==='running').map(r=>r.id)};
+}
+export async function sanitizeBackup(db,backups,id){
+ const markers=await purgeMarkers(db),version=await redactionVersion(markers);
+ const record=await backups.prepare("SELECT sha256,counts FROM backup_runs WHERE id=? AND status='complete'").bind(id).first();
+ if(!record)throw Error('找不到完整備份，請重新整理');
+ if(JSON.parse(record.counts||'{}')._redactions===version)return {ok:true};
+ const snapshot=await redactSnapshot(await readBackup(backups,id),markers),body=JSON.stringify(snapshot),parts=backupParts(body),hash=await sha256(body);
+ const counts={...Object.fromEntries(BUSINESS_TABLES.map(n=>[n,snapshot.tables[n].rows.length])),_redactions:version};
+ const statements=[backups.prepare("UPDATE backup_runs SET sha256=?,byte_length=?,chunk_count=?,counts=? WHERE id=? AND sha256=? AND status='complete'").bind(hash,new TextEncoder().encode(body).length,parts.length,JSON.stringify(counts),id,record.sha256),backups.prepare('DELETE FROM backup_chunks WHERE backup_id=? AND EXISTS(SELECT 1 FROM backup_runs WHERE id=? AND sha256=?)').bind(id,id,hash)];
+ parts.forEach((part,index)=>statements.push(backups.prepare('INSERT INTO backup_chunks(backup_id,part,body) SELECT ?,?,? WHERE EXISTS(SELECT 1 FROM backup_runs WHERE id=? AND sha256=?)').bind(id,index,part,id,hash)));
+ await backups.batch(statements);
+ const updated=await backups.prepare('SELECT sha256 FROM backup_runs WHERE id=?').bind(id).first();
+ if(updated?.sha256!==hash)throw Error('備份清理同時更新，請再試一次');
+ return {ok:true};
 }

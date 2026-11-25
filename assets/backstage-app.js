@@ -1,4 +1,4 @@
-import {initBackups} from './backup-ui.js';
+import {initBackups} from './backup-ui.js?v=purge-20261125';
 import {initBilling} from './billing-ui.js';
 import {orderLabel,sourceLabel,sourceClass} from './order-display.js';
 import {analyze} from './metrics.js';
@@ -77,7 +77,18 @@ document.addEventListener('click',e=>run(async()=>{const b=e.target.closest('but
  if(b.dataset.image){const p=[...products,...deletedProducts].find(p=>p.id===b.dataset.image);$('imageDialogTitle').textContent=p.name;$('productImagePreview').src=p.image||PRODUCT_FALLBACK;$('productImagePreview').alt=p.name;$('imageDialog').showModal();}
  if(b.dataset.close)$(b.dataset.close).close();if(b.dataset.edit)edit(products.find(p=>p.id===b.dataset.edit));
  if(b.dataset.toggle){const p=products.find(p=>p.id===b.dataset.id);b.disabled=true;try{await api('admin/products/'+encodeURIComponent(p.id),'PATCH',{...p,[b.dataset.toggle]:!p[b.dataset.toggle]});await refresh();toast('商品顯示狀態已更新');}finally{b.disabled=false;}}
- if(b.dataset.purgeOrder){const o=orders.find(o=>o.id===b.dataset.purgeOrder);if(!o?.deletedAt)return;if(!await ask('永久刪除 '+orderLabel(o.id)+'（'+o.name+'）？訂單內容將從系統移除，無法從後台還原，庫存不會再次回補。已納入結帳或退貨抵扣的訂單不能永久刪除。既有備份依保留期限保存。'))return;b.disabled=true;try{await api('admin/orders/'+encodeURIComponent(o.id),'PATCH',{action:'purge',revision:o.revision,confirmPermanent:true});await refresh();toast('訂單已永久刪除');}finally{b.disabled=false;}}
+ if(b.dataset.purgeOrder){
+  const o=orders.find(o=>o.id===b.dataset.purgeOrder);if(!o?.deletedAt)return;
+  b.disabled=true;
+  try{
+   const preview=await api('admin/orders/'+encodeURIComponent(o.id),'PATCH',{action:'purgePreview',revision:o.revision});
+   if(!await ask('永久刪除 '+orderLabel(o.id)+'（'+o.name+'）？訂單、退貨明細與雲端舊備份中的該單都會移除，無法還原。相關 '+preview.invoiceIds.length+' 張結帳單（含收款及抵扣紀錄）與 '+preview.manualReturnIds.length+' 筆手填退貨會一併永久刪除；同結帳單的其他 '+preview.releasedOrderIds.length+' 張訂單保留，可重新結帳。庫存不會再次回補。已下載到裝置的舊檔案需自行刪除。Cloudflare 平台的 Time Travel 歷史仍依免費方案保留 7 天。'))return;
+   await api('admin/orders/'+encodeURIComponent(o.id),'PATCH',{action:'purge',revision:o.revision,billingRevision:preview.billingRevision,confirmPermanent:true});
+   await refresh();
+   try{await backups.cleanup();toast('訂單與相關結帳、退貨及舊備份內容已永久刪除');}
+   catch(error){await backups.refresh();throw Error('正式訂單已永久移除，但舊備份清理未完成。請到「資料備份」按「繼續清理舊備份」。'+error.message);}
+  }finally{b.disabled=false;}
+ }
  if(b.dataset.deleteOrder||b.dataset.restoreOrder){const o=orders.find(o=>o.id===(b.dataset.deleteOrder||b.dataset.restoreOrder)),removing=!!b.dataset.deleteOrder;const message=removing?(['new','picking'].includes(o.status)?'確定刪除此訂單？訂單將取消並回補預留庫存，可在「已刪除訂單」中還原；還原後仍為已取消。':'確定刪除此訂單？銷售、退貨與庫存紀錄會保留，可在「已刪除訂單」中還原。'):'確定還原此訂單？已取消的訂單會維持已取消，不會重新預留庫存。';if(!await ask(message))return;b.disabled=true;try{await api('admin/orders/'+encodeURIComponent(o.id),'PATCH',{action:removing?'delete':'restoreOrder',revision:o.revision});await refresh();toast(removing?'訂單已刪除，可從「已刪除訂單」還原':'訂單已還原');}finally{b.disabled=false;}}
  if(b.dataset.action){const o=orders.find(o=>o.id===b.dataset.id);if(!await ask(b.dataset.action==='ship'?'確認此訂單已完成出貨？':'確定取消訂單並回補庫存？'))return;b.disabled=true;try{await api('admin/orders/'+encodeURIComponent(o.id),'PATCH',{action:b.dataset.action,revision:o.revision});await refresh();toast('訂單已更新');}finally{b.disabled=false;}}
  if(b.dataset.removeProduct){await removeProducts([b.dataset.removeProduct]);return;}
