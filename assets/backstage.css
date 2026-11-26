@@ -36,3 +36,9 @@
  .workspace>aside>nav{width:100%;min-width:0;max-width:100%;display:flex;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain;scrollbar-width:thin;padding-bottom:8px;scroll-padding-inline:4px;}
  .workspace>aside>nav>button{flex:0 0 auto;width:max-content;}
 }
+
+/* Put the desktop/tablet sidebar scrollbar at the outer left edge. */
+@media(min-width:901px){
+ .workspace>aside{direction:rtl;}
+ .workspace>aside>*{direction:ltr;}
+}
