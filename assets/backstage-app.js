@@ -119,3 +119,11 @@ $('insertProducts').onclick=()=>run(openInsert);$('insertAfter').onchange=previe
 $('insertForm').onsubmit=e=>{e.preventDefault();run(async()=>{const button=e.submitter;button.disabled=true;try{await api('admin/catalog/reorder','POST',{ids:[...selectedProducts],afterId:$('insertAfter').value||null,revision:catalogRevision});selectedProducts.clear();$('insertDialog').close();await refresh();toast('商品已插入，所有編號已依序更新');}finally{button.disabled=false;}});};
 
 $('downloadFullBackup').onclick=()=>run(async()=>download('福緣完整備份-'+new Date().toISOString().slice(0,10)+'.json',JSON.stringify(await api('admin/backup/full'))));
+
+const sidebarScroll=document.querySelector('.workspace>aside');
+let sidebarScrollTimer;
+sidebarScroll.addEventListener('scroll',()=>{
+ sidebarScroll.classList.add('is-scrolling');
+ clearTimeout(sidebarScrollTimer);
+ sidebarScrollTimer=setTimeout(()=>sidebarScroll.classList.remove('is-scrolling'),900);
+},{passive:true});

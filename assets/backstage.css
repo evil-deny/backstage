@@ -34,11 +34,22 @@
  .workspace{grid-template-columns:minmax(0,1fr);}
  .workspace>aside{min-width:0;max-width:100%;}
  .workspace>aside>nav{width:100%;min-width:0;max-width:100%;display:flex;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain;scrollbar-width:thin;padding-bottom:8px;scroll-padding-inline:4px;}
- .workspace>aside>nav>button{flex:0 0 auto;width:max-content;}
+ .workspace>aside>nav>button{display:flex;flex:0 0 auto;width:max-content;gap:8px;}
+ .workspace>aside>nav>button .nav-text{flex:0 0 auto;}
 }
 
 /* Put the desktop/tablet sidebar scrollbar at the outer left edge. */
 @media(min-width:901px){
  .workspace>aside{direction:rtl;}
  .workspace>aside>*{direction:ltr;}
+}
+
+/* Keep the scroll gutter steady; reveal its thumb only during scrolling. */
+@media(min-width:901px){
+ .workspace>aside{scrollbar-width:thin;scrollbar-color:transparent transparent;transition:scrollbar-color .2s;}
+ .workspace>aside.is-scrolling{scrollbar-color:#94a99e transparent;}
+ .workspace>aside::-webkit-scrollbar{width:6px;background:transparent;}
+ .workspace>aside::-webkit-scrollbar-thumb{background:transparent;border-radius:6px;transition:background-color .2s;}
+ .workspace>aside.is-scrolling::-webkit-scrollbar-thumb{background:#94a99e;}
+ .workspace>aside::-webkit-scrollbar-track{background:transparent;}
 }
