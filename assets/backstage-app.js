@@ -1,5 +1,5 @@
 import {initBackups} from './backup-ui.js?v=purge-20261125';
-import {initBilling} from './billing-ui.js';
+import {initBilling} from './billing-ui.js?v=daily-20261126';
 import {orderLabel,sourceLabel,sourceClass} from './order-display.js';
 import {analyze} from './metrics.js';
 import {catalogOrder} from './catalog-order.js';
