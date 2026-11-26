@@ -28,3 +28,11 @@
  .workspace>aside{height:100vh;height:100dvh;min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior-y:contain;-webkit-overflow-scrolling:touch;scrollbar-gutter:stable;padding-bottom:max(28px,env(safe-area-inset-bottom,0px));}
  .workspace>aside>*{flex-shrink:0;}
 }
+
+/* Phone-only navigation: constrain the grid so the menu scrolls inside the screen. */
+@media(max-width:600px){
+ .workspace{grid-template-columns:minmax(0,1fr);}
+ .workspace>aside{min-width:0;max-width:100%;}
+ .workspace>aside>nav{width:100%;min-width:0;max-width:100%;display:flex;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain;scrollbar-width:thin;padding-bottom:8px;scroll-padding-inline:4px;}
+ .workspace>aside>nav>button{flex:0 0 auto;width:max-content;}
+}
