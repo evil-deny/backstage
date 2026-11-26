@@ -263,6 +263,9 @@
  @media(max-width:600px){.topbar{padding-top:calc(10px + env(safe-area-inset-top,0px));padding-left:max(12px,env(safe-area-inset-left,0px));padding-right:max(12px,env(safe-area-inset-right,0px))}.staff-catalog-nav{top:calc(66px + env(safe-area-inset-top,0px))}.wrap{padding-left:max(10px,env(safe-area-inset-left,0px));padding-right:max(10px,env(safe-area-inset-right,0px))}.safari-guide-toolbar{gap:5px;padding:6px;font-size:10px}.safari-guide-menu{width:24px;height:24px}}
 }
 
+
+/* Group desktop account actions; keep the existing mobile header unchanged. */
+@media(min-width:901px){.topbar{justify-content:flex-end}.topbar>.brand{margin-right:auto}}
 </style>
 </head>
 <body>
