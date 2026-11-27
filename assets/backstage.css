@@ -56,3 +56,6 @@
 
 /* Keep quantities distinct from numeric package units, e.g. 1 / 5斤. */
 .quantity-unit{white-space:nowrap}#dailyMetrics{grid-template-columns:repeat(2,minmax(0,1fr))}
+
+/* Source cards keep only the label and an aligned amount. */
+.daily-sources>.panel{display:flex;flex-direction:column;gap:20px;margin-bottom:0}.daily-sources>.panel>strong{margin-top:auto;font-variant-numeric:tabular-nums}

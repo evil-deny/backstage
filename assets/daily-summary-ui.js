@@ -10,7 +10,7 @@ export function initDailySummary({csv}){
   summary=summarizeDaily(orders,bills,products,{date:$('dailyDate').value,supply:$('dailySupply').value,status:$('dailyStatus').value});
   const s=summary;
   $('dailyMetrics').innerHTML=metric('叫貨訂單',s.orderCount,s.peopleCount+' 位批發人；'+s.pendingOrders+' 筆未出貨')+metric(s.unpricedQty?'已知叫貨金額':'叫貨商品合計',money(s.amountCents),s.unpricedQty?'尚有時價未定價，非完整金額':'依下單單價或已建立結帳單的時價');
-  $('dailySources').innerHTML=s.sources.map(source=>`<section class="panel"><h2>${esc(source.category)}</h2><p>${esc(quantity(source.units))}</p><strong>${esc(money(source.amountCents))}${source.unpricedQty?' ＋ 待定時價':''}</strong></section>`).join('');
+  $('dailySources').innerHTML=s.sources.map(source=>`<section class="panel"><h2>${esc(source.category)}</h2><strong>${esc(money(source.amountCents))}${source.unpricedQty?' ＋ 待定時價':''}</strong></section>`).join('');
   $('dailyRows').innerHTML=s.rows.map(r=>`<tr><td>${esc(r.category)}</td><td><strong>${esc(r.name)}</strong><small>${esc(r.code)} · ${r.orderCount} 筆訂單</small></td><td class="quantity-unit"><b>${r.qty} / ${esc(r.unit)}</b></td><td class="quantity-unit">${r.pendingQty} / ${esc(r.unit)}</td><td class="quantity-unit">${r.shippedQty} / ${esc(r.unit)}</td><td class="quantity-unit">${r.returnedQty} / ${esc(r.unit)}</td><td class="price">${esc(money(r.amountCents))}${r.unpricedQty?`<small class="daily-unpriced">另有 ${r.unpricedQty} / ${esc(r.unit)} 待定時價</small>`:''}</td></tr>`).join('')||'<tr><td colspan="7" class="empty">這一天沒有符合條件的叫貨訂單</td></tr>';
   $('exportDaily').disabled=!s.rows.length;
  }

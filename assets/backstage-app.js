@@ -1,4 +1,4 @@
-import {initDailySummary} from './daily-summary-ui.js?v=quantity-20261127';
+import {initDailySummary} from './daily-summary-ui.js?v=source-cards-20261127';
 import {initBackups} from './backup-ui.js?v=purge-20261125';
 import {initBilling} from './billing-ui.js?v=fees-20261127';
 import {orderLabel,sourceLabel,sourceClass} from './order-display.js';
