@@ -562,7 +562,7 @@
             </div>
             <table class="receipt-table">
               <thead><tr><th>商品</th><th>單價</th><th>數量</th><th>小計</th></tr></thead>
-              <tbody>${pendingOrder.items.map((item,index)=>`<tr><td><strong>${itemName(item)}</strong><div class="receipt-edit" ${submitted||isExtraFee(item)?'hidden':''}><button data-receipt-dec="${index}">−</button><button data-receipt-inc="${index}">＋</button><button class="remove" data-receipt-remove="${index}">刪除</button></div></td><td>${money(itemPrice(item))}${isExtraFee(item)&&item.id!=='fee-rent'&&!submitted?`<button class="remove" data-receipt-remove="${index}">移除費用</button>`:""}</td><td>${item.qty} ${itemUnit(item)}</td><td>${money(itemSubtotal(item))}</td></tr>`).join("") || `<tr><td colspan="4">訂單已沒有品項。</td></tr>`}</tbody>
+              <tbody>${pendingOrder.items.map((item,index)=>`<tr><td><strong>${itemName(item)}</strong><div class="receipt-edit" ${submitted||isExtraFee(item)?'hidden':''}><button data-receipt-dec="${index}">−</button><button data-receipt-inc="${index}">＋</button><button class="remove" data-receipt-remove="${index}">刪除</button></div></td><td>${money(itemPrice(item))}${isExtraFee(item)&&item.id!=='fee-rent'&&!submitted?`<button class="remove" data-receipt-remove="${index}">移除費用</button>`:""}</td><td>${item.qty} / ${itemUnit(item)}</td><td>${money(itemSubtotal(item))}</td></tr>`).join("") || `<tr><td colspan="4">訂單已沒有品項。</td></tr>`}</tbody>
             </table>
             <div class="receipt-total-row"><span>總金額</span><strong>${money(total)}</strong></div>
           </div>
@@ -574,7 +574,7 @@
           ${pendingOrder.note?`<p><strong>備註：</strong>${pendingOrder.note}</p>`:""}
           <table class="print-table">
             <thead><tr><th>商品</th><th>單價</th><th>數量</th><th>總額</th></tr></thead>
-            <tbody>${pendingOrder.items.map(item=>`<tr><td>${itemName(item)}</td><td>${money(itemPrice(item))}</td><td>${item.qty} ${itemUnit(item)}</td><td>${money(itemSubtotal(item))}</td></tr>`).join("")}</tbody>
+            <tbody>${pendingOrder.items.map(item=>`<tr><td>${itemName(item)}</td><td>${money(itemPrice(item))}</td><td>${item.qty} / ${itemUnit(item)}</td><td>${money(itemSubtotal(item))}</td></tr>`).join("")}</tbody>
           </table>
           <div class="print-total">總金額：${money(total)}</div>
         </div>`;
@@ -599,7 +599,7 @@
       const rows=items.map(item=>({
         name:itemName(item),
         price:money(itemPrice(item)),
-        qty:String(item.qty)+" "+(item.unit??"件"),
+        qty:String(item.qty)+" / "+(item.unit??"件"),
         subtotal:money(itemSubtotal(item))
       }));
       const total=items.reduce((sum,i)=>sum+itemSubtotal(i),0);
@@ -654,7 +654,7 @@
         wrapCanvasText(ctx,row.name,cols[0]+12,y+10,nameWidth,lineHeight);
         ctx.textAlign="right";
         ctx.fillText(row.price,cols[2]-12,y+10);
-        ctx.fillText(row.qty,cols[3]-12,y+10);
+        ctx.fillText(row.qty,cols[3]-12,y+10,cols[3]-cols[2]-24);
         ctx.fillText(row.subtotal,cols[4]-12,y+10);
         ctx.textAlign="left";
         y+=h;
@@ -740,11 +740,11 @@
     }
     function orderCard(order){
       const shipped=order.status==="shipped"||order.status==="returned";
-      return `<div class="order-card"><div class="order-title"><span>${attrText(order.name)} <span class="short-order" title="${attrText(order.id)}">${attrText(orderLabel(order.id))}</span> <span class="order-source ${sourceClass(order.channel)}">${sourceLabel(order.channel)}</span></span><span class="badge ${order.status}">${statusText(order.status)}</span></div><div class="meta">送單 ${order.createdAt || "-"}${order.shippedAt?` · 出貨 ${order.shippedAt}`:""}${order.returnedAt?` · 退貨 ${order.returnedAt}`:""}</div><div class="receipt-list">${order.items.map(i=>`<div class="line"><span>${itemName(i)} · 單價 ${money(itemPrice(i))} × ${i.qty} ${itemUnit(i)}${shipped?`<br><small>${i.picked?"已出貨":"未出貨/缺貨"}</small>`:""}</span><strong>${money(shipped?shippedSubtotal(i):itemSubtotal(i))}</strong></div>`).join("")}</div><div><strong>總計：</strong>${money(orderNet(order))}${order.note?` ｜備註：${attrText(order.note)}`:""}</div><div class="actions"><button class="danger" data-delete-order="${order.id}">取消／封存這筆明細</button></div></div>`;
+      return `<div class="order-card"><div class="order-title"><span>${attrText(order.name)} <span class="short-order" title="${attrText(order.id)}">${attrText(orderLabel(order.id))}</span> <span class="order-source ${sourceClass(order.channel)}">${sourceLabel(order.channel)}</span></span><span class="badge ${order.status}">${statusText(order.status)}</span></div><div class="meta">送單 ${order.createdAt || "-"}${order.shippedAt?` · 出貨 ${order.shippedAt}`:""}${order.returnedAt?` · 退貨 ${order.returnedAt}`:""}</div><div class="receipt-list">${order.items.map(i=>`<div class="line"><span>${itemName(i)} · 單價 ${money(itemPrice(i))} × ${i.qty} / ${itemUnit(i)}${shipped?`<br><small>${i.picked?"已出貨":"未出貨/缺貨"}</small>`:""}</span><strong>${money(shipped?shippedSubtotal(i):itemSubtotal(i))}</strong></div>`).join("")}</div><div><strong>總計：</strong>${money(orderNet(order))}${order.note?` ｜備註：${attrText(order.note)}`:""}</div><div class="actions"><button class="danger" data-delete-order="${order.id}">取消／封存這筆明細</button></div></div>`;
     }
     function renderShipping(){
       const orders=state.orders.filter(o=>o.status==="new"||o.status==="picking");
-      document.getElementById("shipPage").innerHTML=`<section class="category"><div class="category-title"><span>出貨劃記</span><span class="category-count">${orders.length} 張</span></div><div style="padding:10px">${orders.map(o=>`<div class="order-card"><div class="order-title"><span>${attrText(o.name)} <span class="short-order" title="${attrText(o.id)}">${attrText(orderLabel(o.id))}</span> <span class="order-source ${sourceClass(o.channel)}">${sourceLabel(o.channel)}</span></span><span class="badge">${statusText(o.status)}</span></div><div class="meta">送單 ${o.createdAt || "-"}</div><div class="pick-list">${o.items.map(i=>`<label class="check"><input type="checkbox" data-pick="${o.id}" data-product="${i.id}" ${i.picked?"checked":""}><span>${itemName(i)} · 單價 ${money(itemPrice(i))}</span><strong>× ${i.qty} ${itemUnit(i)}</strong></label>`).join("")}</div><div class="actions"><button class="primary" data-ship="${o.id}">完成出貨</button></div></div>`).join("")||`<div class="empty">沒有待出貨訂單。</div>`}</div></section>`;
+      document.getElementById("shipPage").innerHTML=`<section class="category"><div class="category-title"><span>出貨劃記</span><span class="category-count">${orders.length} 張</span></div><div style="padding:10px">${orders.map(o=>`<div class="order-card"><div class="order-title"><span>${attrText(o.name)} <span class="short-order" title="${attrText(o.id)}">${attrText(orderLabel(o.id))}</span> <span class="order-source ${sourceClass(o.channel)}">${sourceLabel(o.channel)}</span></span><span class="badge">${statusText(o.status)}</span></div><div class="meta">送單 ${o.createdAt || "-"}</div><div class="pick-list">${o.items.map(i=>`<label class="check"><input type="checkbox" data-pick="${o.id}" data-product="${i.id}" ${i.picked?"checked":""}><span>${itemName(i)} · 單價 ${money(itemPrice(i))}</span><strong>× ${i.qty} / ${itemUnit(i)}</strong></label>`).join("")}</div><div class="actions"><button class="primary" data-ship="${o.id}">完成出貨</button></div></div>`).join("")||`<div class="empty">沒有待出貨訂單。</div>`}</div></section>`;
     }
     function returnedQty(order,item){
       return (order.returns||[]).filter(r=>r.id===item.id && !!r.custom===!!item.custom && r.name===item.name).reduce((s,r)=>s+r.qty,0);
@@ -904,7 +904,7 @@
     async function loadMyOrders(){
       const target=document.getElementById('myOrdersList');target.textContent='正在載入…';
       try{const orders=await FuyuanCloud.request('/staff/my-orders'),labels={new:'待出貨',picking:'揀貨中',shipped:'已出貨',returned:'有退貨',cancelled:'已取消'};
-      target.innerHTML=orders.map(o=>`<article class="history-receipt"><header><h3>福緣訂單明細</h3><div class="receipt-number"><strong>${attrText(orderLabel(o.id))}</strong><span class="badge">${attrText(labels[o.status]||o.status)}</span></div></header><div class="receipt-info"><div><strong>訂購人</strong>${attrText(o.name)}</div><div><strong>開單時間</strong>${attrText(new Date(o.createdAt).toLocaleString('zh-TW',{timeZone:'Asia/Taipei',hour12:false}))}</div></div><table><thead><tr><th>品項</th><th>單價</th><th>數量</th><th>小計</th></tr></thead><tbody>${o.items.map(i=>{const returned=(o.returns||[]).filter(r=>r.id===i.id).reduce((s,r)=>s+r.qty,0);return `<tr><td><strong>${attrText(i.name)}</strong>${i.picked===false&&['shipped','returned'].includes(o.status)?'<small>未出貨</small>':''}${returned?`<small>退貨 ${returned} ${attrText(i.unit||'件')}</small>`:''}</td><td>${i.market?'時價':money(i.price)}</td><td>${i.qty}<br>${attrText(i.unit||'件')}</td><td>${i.market?'時價':money(i.price*i.qty)}</td></tr>`}).join('')}</tbody></table><footer><div><span>訂單金額</span><strong>${money(o.total)}${o.market?'＋時價':''}</strong></div><div><span>退貨金額</span><span>${money((o.returns||[]).reduce((s,r)=>s+r.price*r.qty,0))}</span></div></footer>${o.note?`<p class="receipt-note"><strong>備註：</strong>${attrText(o.note)}</p>`:''}</article>`).join('')||'<div class="empty">目前沒有訂單。</div>';
+      target.innerHTML=orders.map(o=>`<article class="history-receipt"><header><h3>福緣訂單明細</h3><div class="receipt-number"><strong>${attrText(orderLabel(o.id))}</strong><span class="badge">${attrText(labels[o.status]||o.status)}</span></div></header><div class="receipt-info"><div><strong>訂購人</strong>${attrText(o.name)}</div><div><strong>開單時間</strong>${attrText(new Date(o.createdAt).toLocaleString('zh-TW',{timeZone:'Asia/Taipei',hour12:false}))}</div></div><table><thead><tr><th>品項</th><th>單價</th><th>數量</th><th>小計</th></tr></thead><tbody>${o.items.map(i=>{const returned=(o.returns||[]).filter(r=>r.id===i.id).reduce((s,r)=>s+r.qty,0);return `<tr><td><strong>${attrText(i.name)}</strong>${i.picked===false&&['shipped','returned'].includes(o.status)?'<small>未出貨</small>':''}${returned?`<small>退貨 ${returned} / ${attrText(i.unit||'件')}</small>`:''}</td><td>${i.market?'時價':money(i.price)}</td><td>${i.qty} / ${attrText(i.unit||'件')}</td><td>${i.market?'時價':money(i.price*i.qty)}</td></tr>`}).join('')}</tbody></table><footer><div><span>訂單金額</span><strong>${money(o.total)}${o.market?'＋時價':''}</strong></div><div><span>退貨金額</span><span>${money((o.returns||[]).reduce((s,r)=>s+r.price*r.qty,0))}</span></div></footer>${o.note?`<p class="receipt-note"><strong>備註：</strong>${attrText(o.note)}</p>`:''}</article>`).join('')||'<div class="empty">目前沒有訂單。</div>';
       }catch(e){target.textContent=e.message;}
     }
     document.getElementById('refreshMyOrders').onclick=loadMyOrders;

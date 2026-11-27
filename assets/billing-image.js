@@ -4,9 +4,9 @@ const group=i=>String(i.category).includes('兩天一次')?'兩天一次':String
 export function billImageRows(b){
  const rows=[];for(const category of [...new Set(b.lines.map(group))]){
   const items=b.lines.filter(i=>group(i)===category);rows.push({kind:'group',text:category+'　小計 '+money(items.reduce((s,i)=>s+i.grossCents,0))});
-  for(const i of items)rows.push({kind:'item',name:i.name,detail:[i.code,orderLabel(i.orderId)].filter(Boolean).join(' · '),qty:i.qty+' '+i.unit,price:money(i.unitPriceCents),total:money(i.grossCents)});
+  for(const i of items)rows.push({kind:'item',name:i.name,detail:[i.code,orderLabel(i.orderId)].filter(Boolean).join(' · '),qty:i.qty+' / '+i.unit,price:money(i.unitPriceCents),total:money(i.grossCents)});
  }
- if(b.manualItems.length){rows.push({kind:'group',text:'手填時價品項'});for(const i of b.manualItems)rows.push({kind:'item',name:i.name,detail:'',qty:i.qty+' '+i.unit,price:money(i.unitPriceCents),total:money(i.grossCents)});}
+ if(b.manualItems.length){rows.push({kind:'group',text:'手填時價品項'});for(const i of b.manualItems)rows.push({kind:'item',name:i.name,detail:'',qty:i.qty+' / '+i.unit,price:money(i.unitPriceCents),total:money(i.grossCents)});}
  rows.push({kind:'sum',text:'訂單商品合計',value:money(b.goodsCents)},{kind:'sum',text:'手填品項合計',value:money(b.manualCents)},{kind:'sum',text:'租金',value:money(b.rentCents)},{kind:'sum',text:'廠電費',value:money(b.utilitiesCents??0)},{kind:'sum',text:'退貨抵扣',value:'− '+money(b.creditCents)},{kind:'payable',text:'本次應收',value:money(b.payableCents)},{kind:'sum',text:'留待下次抵扣',value:money(b.carryCents)});
  if(b.credits.length){rows.push({kind:'group',text:'本次抵扣的退貨'});for(const c of b.credits)rows.push({kind:'sum',text:c.name,value:'− '+money(c.appliedCents)});}
  return rows;
