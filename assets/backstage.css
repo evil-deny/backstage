@@ -53,3 +53,6 @@
  .workspace>aside.is-scrolling::-webkit-scrollbar-thumb{background:#94a99e;}
  .workspace>aside::-webkit-scrollbar-track{background:transparent;}
 }
+
+/* Keep quantities distinct from numeric package units, e.g. 1 / 5斤. */
+.quantity-unit{white-space:nowrap}#dailyMetrics{grid-template-columns:repeat(2,minmax(0,1fr))}
