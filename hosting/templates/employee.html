@@ -268,6 +268,12 @@
 @media(min-width:901px){.topbar{justify-content:flex-end}.topbar>.brand{margin-right:auto}}
 
 .extra-fee-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;padding:22px}.extra-fee-fields label{display:grid;gap:10px;font-size:20px;font-weight:700}.extra-fee-fields input{width:100%;min-width:0;min-height:54px;font-size:22px}@media(max-width:600px){.extra-fee-fields{grid-template-columns:1fr;padding:16px}}
+
+/* Phone supply tabs show names only, with four equal touch targets. */
+@media(max-width:600px){
+ .supply-tab small{display:none;}
+ .supply-tab{flex:1 0 0;min-width:0;min-height:52px;padding:12px 4px;gap:0;font-size:clamp(14px,4vw,17px);font-weight:750;line-height:1.4;}
+}
 </style>
 </head>
 <body>
