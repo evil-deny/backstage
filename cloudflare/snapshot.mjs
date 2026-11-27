@@ -1,5 +1,5 @@
 import {erasurePlan,hashId} from '../hosting/lib/order-erasure.mjs';
-export const BUSINESS_TABLES=['inventory','order_records','catalog_state','billing_state','billing_invoices','billing_claims','billing_manual_returns','billing_people','staff_members','order_tombstones'];
+export const BUSINESS_TABLES=['inventory','order_records','catalog_state','billing_state','billing_invoices','billing_claims','billing_manual_returns','billing_people','staff_members','order_tombstones','staff_profiles'];
 export const ALL_TABLES=[...BUSINESS_TABLES,'api_grants','connection_tickets','google_login_challenges','mutation_guards'];
 const quoteId=value=>'"'+value.replaceAll('"','""')+'"';
 export const sha256=async value=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value))),b=>b.toString(16).padStart(2,'0')).join('');
@@ -12,11 +12,12 @@ export async function snapshotDatabase(db){
  // D1 batch executes the reads in a single transaction, keeping stock and orders consistent.
  const results=await db.batch(statements),tables={};
  BUSINESS_TABLES.forEach((name,index)=>{tables[name]={columns:results[index*2+1].results.map(c=>c.name),rows:results[index*2+2].results};});
- return redactSnapshot({format:'fuyuan-d1-snapshot',version:1,exportedAt:new Date().toISOString(),schemaSql:results[0].results.map(r=>r.sql+';').join('\n'),tables},tables.order_tombstones.rows);
+ return redactSnapshot({format:'fuyuan-d1-snapshot',version:2,exportedAt:new Date().toISOString(),schemaSql:results[0].results.map(r=>r.sql+';').join('\n'),tables},tables.order_tombstones.rows);
 }
 
 export function validateSnapshot(snapshot){
- if(snapshot?.format!=='fuyuan-d1-snapshot'||snapshot.version!==1||!snapshot.tables)throw Error('不支援的備份格式');
+ if(snapshot?.format!=='fuyuan-d1-snapshot'||![1,2].includes(snapshot.version)||!snapshot.tables)throw Error('不支援的備份格式');
+ if(snapshot.version===1&&!snapshot.tables.staff_profiles){snapshot.tables.staff_profiles={columns:['email','name','updated_at'],rows:[]};if(snapshot.schemaSql)snapshot.schemaSql+='\nCREATE TABLE IF NOT EXISTS staff_profiles (email TEXT PRIMARY KEY NOT NULL,name TEXT NOT NULL,updated_at TEXT NOT NULL);';}
  for(const name of BUSINESS_TABLES){const t=snapshot.tables[name];if(!t||!Array.isArray(t.columns)||!t.columns.length||!Array.isArray(t.rows)||t.columns.some(c=>typeof c!=='string'||!/^[a-z_]+$/.test(c))||new Set(t.columns).size!==t.columns.length)throw Error('備份資料表不完整：'+name);
   const keys=new Set();for(const row of t.rows){if(!row||t.columns.some(c=>!(c in row))||Object.keys(row).some(c=>!t.columns.includes(c)))throw Error('備份欄位不完整：'+name);for(const v of Object.values(row))if(v!==null&&typeof v!=='string'&&!(typeof v==='number'&&Number.isFinite(v)))throw Error('備份欄位型別錯誤');const key=row.request_id??row.id??row.order_id??row.key??row.email;if(key===undefined||keys.has(key))throw Error('備份主鍵重複或遺失：'+name);keys.add(key);if('body' in row)JSON.parse(row.body);}
  }

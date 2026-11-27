@@ -1,0 +1,5 @@
+CREATE TABLE IF NOT EXISTS staff_profiles (
+ email TEXT PRIMARY KEY NOT NULL,
+ name TEXT NOT NULL,
+ updated_at TEXT NOT NULL
+);

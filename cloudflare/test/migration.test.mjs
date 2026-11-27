@@ -82,3 +82,22 @@ test('員工可送出額外費用單，金額只計一次、重送不重複且�
  const zero=await post({...body,requestId:crypto.randomUUID(),rentAmount:0,items:[feeItems[1]]});assert.equal(zero.status,201);assert.equal((await zero.json()).total,250);
 
 });
+
+test('帳號大名依實際登入信箱保存，跨裝置讀取，不能指定他人信箱',async()=>{
+ const get=async(auth=staffToken)=>handleBackstage(new Request('https://api.example.test/api/staff/profile',{headers:auth?{Authorization:'Bearer '+auth}:{}}),db,config);
+ assert.equal((await get('')).status,401);
+ assert.equal((await(await get()).json()).name,'費用測試');
+ const saved=await request('staff/profile',{name:'  保存的大名  ',email:'owner@example.test'},staffToken);assert.equal(saved.status,200);assert.equal(saved.body.name,'保存的大名');
+ assert.equal((await(await get()).json()).name,'保存的大名');
+ assert.equal(sql.prepare('SELECT name FROM staff_profiles WHERE email=?').get('staff@example.test').name,'保存的大名');
+ assert.equal(sql.prepare('SELECT name FROM staff_profiles WHERE email=?').get('owner@example.test'),undefined);
+ assert.equal((await request('staff/profile',{name:'管理員大名'},token)).status,200);
+ assert.equal((await(await get(token)).json()).name,'管理員大名');assert.equal((await(await get()).json()).name,'保存的大名');
+ assert.equal((await request('staff/profile',{name:''},staffToken)).status,400);assert.equal((await request('staff/profile',{name:'名'.repeat(61)},staffToken)).status,400);
+ const history=sql.prepare("SELECT body FROM order_records WHERE json_extract(body,'$.name')='費用測試' LIMIT 1").get();assert(history);
+ const snapshot=await snapshotDatabase(db);assert.equal(snapshot.version,2);assert(snapshot.tables.staff_profiles.rows.some(r=>r.name==='保存的大名'));
+ const restored=new DatabaseSync(':memory:');restored.exec(snapshotToSql(snapshot));assert.equal(restored.prepare('SELECT name FROM staff_profiles WHERE email=?').get('staff@example.test').name,'保存的大名');
+ const legacy=structuredClone(snapshot);legacy.version=1;delete legacy.tables.staff_profiles;legacy.schemaSql=legacy.schemaSql.replace(/CREATE TABLE[^;]*staff_profiles[^;]*;/g,'');
+ const oldRestored=new DatabaseSync(':memory:');oldRestored.exec(snapshotToSql(legacy));assert.equal(oldRestored.prepare('SELECT COUNT(*) AS n FROM staff_profiles').get().n,0);
+ const invalid=structuredClone(snapshot);delete invalid.tables.staff_profiles;assert.throws(()=>snapshotToSql(invalid),/staff_profiles/);
+});
