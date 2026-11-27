@@ -276,6 +276,8 @@
 }
 
 .ship-item{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;border:1px solid var(--line);border-radius:10px;background:#f8fafc;padding:12px}.ship-item .check{border:0;padding:0;grid-template-columns:24px minmax(0,1fr);background:transparent}.ship-item small{display:block;font-size:14px;margin-top:5px;color:var(--muted)}.ship-quantity{display:grid;grid-template-columns:auto 84px auto;gap:8px;align-items:center;font-size:16px;font-weight:700}.ship-quantity input{width:84px;min-height:48px;text-align:center;font-size:20px}@media(max-width:600px){.ship-item{grid-template-columns:1fr}.ship-quantity{justify-content:end}}
+
+.receipt-category td,.history-receipt .receipt-category td{background:#e8f3ef;color:#164e3d;font-size:18px;font-weight:800;text-align:left;padding:12px!important}
 </style>
 </head>
 <body>
@@ -332,7 +334,7 @@
   <script src="/cloud-sync.js" data-staff-session="true"></script>
   <script type="module">
     import {EXTRA_FEES,isExtraFee,extraFeeItems,requireRentAmount} from "./assets/extra-fees.js?v=rent-required-20261127";
-    import {receiptShareGroups} from "./assets/receipt-share.js?v=20261127";
+    import {receiptShareGroups,receiptSections} from "./assets/receipt-share.js?v=categories-20261127";
     import {shippedQuantity,plannedQuantity} from "./assets/fulfillment.js?v=20261127";
     import {orderLabel,sourceLabel,sourceClass} from "/order-display.js";
     import {catalogOrder,catalogGroups} from "/catalog-order.js";
@@ -576,7 +578,7 @@
             </div>
             <table class="receipt-table">
               <thead><tr><th>商品</th><th>單價</th><th>數量</th><th>小計</th></tr></thead>
-              <tbody>${pendingOrder.items.map((item,index)=>`<tr><td><strong>${itemName(item)}</strong><div class="receipt-edit" ${submitted||isExtraFee(item)?'hidden':''}><button data-receipt-dec="${index}">−</button><button data-receipt-inc="${index}">＋</button><button class="remove" data-receipt-remove="${index}">刪除</button></div></td><td>${money(itemPrice(item))}${isExtraFee(item)&&item.id!=='fee-rent'&&!submitted?`<button class="remove" data-receipt-remove="${index}">移除費用</button>`:""}</td><td>${item.qty} / ${itemUnit(item)}</td><td>${money(itemSubtotal(item))}</td></tr>`).join("") || `<tr><td colspan="4">訂單已沒有品項。</td></tr>`}</tbody>
+              <tbody>${receiptSections(pendingOrder.items,id=>product(id)?.category).map(section=>`<tr class="receipt-category"><td colspan="4">${attrText(section.category)}</td></tr>`+section.entries.map(({item,index})=>`<tr><td><strong>${itemName(item)}</strong><div class="receipt-edit" ${submitted||isExtraFee(item)?'hidden':''}><button data-receipt-dec="${index}">−</button><button data-receipt-inc="${index}">＋</button><button class="remove" data-receipt-remove="${index}">刪除</button></div></td><td>${money(itemPrice(item))}${isExtraFee(item)&&item.id!=='fee-rent'&&!submitted?`<button class="remove" data-receipt-remove="${index}">移除費用</button>`:""}</td><td>${item.qty} / ${itemUnit(item)}</td><td>${money(itemSubtotal(item))}</td></tr>`).join("")).join("") || `<tr><td colspan="4">訂單已沒有品項。</td></tr>`}</tbody>
             </table>
             <div class="receipt-total-row"><span>總金額</span><strong>${money(total)}</strong></div>
           </div>
@@ -588,7 +590,7 @@
           ${pendingOrder.note?`<p><strong>備註：</strong>${pendingOrder.note}</p>`:""}
           <table class="print-table">
             <thead><tr><th>商品</th><th>單價</th><th>數量</th><th>總額</th></tr></thead>
-            <tbody>${pendingOrder.items.map(item=>`<tr><td>${itemName(item)}</td><td>${money(itemPrice(item))}</td><td>${item.qty} / ${itemUnit(item)}</td><td>${money(itemSubtotal(item))}</td></tr>`).join("")}</tbody>
+            <tbody>${receiptSections(pendingOrder.items,id=>product(id)?.category).map(section=>`<tr class="receipt-category"><td colspan="4">${attrText(section.category)}</td></tr>`+section.entries.map(({item})=>`<tr><td>${itemName(item)}</td><td>${money(itemPrice(item))}</td><td>${item.qty} / ${itemUnit(item)}</td><td>${money(itemSubtotal(item))}</td></tr>`).join("")).join("")}</tbody>
           </table>
           <div class="print-total">總金額：${money(total)}</div>
         </div>`;
@@ -610,12 +612,12 @@
       return lines.length*lineHeight;
     }
     function drawShareCanvas(items=pendingOrder.items,title="福緣訂單明細"){
-      const rows=items.map(item=>({
+      const rows=receiptSections(items,id=>product(id)?.category).flatMap(section=>[{kind:'category',name:section.category},...section.entries.map(({item})=>({
         name:itemName(item),
         price:money(itemPrice(item)),
         qty:String(item.qty)+" / "+(item.unit??"件"),
         subtotal:money(itemSubtotal(item))
-      }));
+      }))]);
       const total=items.reduce((sum,i)=>sum+itemSubtotal(i),0);
       const width=1000;
       const padding=40;
@@ -623,7 +625,7 @@
       const lineHeight=30;
       const probe=document.createElement("canvas").getContext("2d");
       probe.font='26px "Microsoft JhengHei", sans-serif';
-      const rowHeights=rows.map(row=>Math.max(50,canvasTextLines(probe,row.name,nameWidth).length*lineHeight+18));
+      const rowHeights=rows.map(row=>row.kind==='category'?44:Math.max(50,canvasTextLines(probe,row.name,nameWidth).length*lineHeight+18));
       const tableTop=pendingOrder.note?214:180;
       const tableHeaderHeight=48;
       const totalGap=18;
@@ -663,6 +665,11 @@
       ctx.font='26px "Microsoft JhengHei", sans-serif';
       rows.forEach((row,index)=>{
         const h=rowHeights[index];
+        if(row.kind==='category'){
+          ctx.fillStyle='#e8f3ef';ctx.fillRect(padding,y,width-padding*2,h);ctx.strokeRect(padding,y,width-padding*2,h);
+          ctx.fillStyle='#164e3d';ctx.font='bold 26px "Microsoft JhengHei", sans-serif';ctx.fillText(row.name,padding+12,y+9,width-padding*2-24);
+          ctx.fillStyle='#111111';ctx.font='26px "Microsoft JhengHei", sans-serif';y+=h;return;
+        }
         ctx.strokeRect(padding,y,width-padding*2,h);
         [cols[1],cols[2],cols[3]].forEach(x=>{ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x,y+h);ctx.stroke();});
         wrapCanvasText(ctx,row.name,cols[0]+12,y+10,nameWidth,lineHeight);
@@ -923,7 +930,7 @@
     async function loadMyOrders(){
       const target=document.getElementById('myOrdersList');target.textContent='正在載入…';
       try{const orders=await FuyuanCloud.request('/staff/my-orders'),labels={new:'待出貨',picking:'揀貨中',shipped:'已出貨',returned:'有退貨',cancelled:'已取消'};
-      target.innerHTML=orders.map(o=>`<article class="history-receipt"><header><h3>福緣訂單明細</h3><div class="receipt-number"><strong>${attrText(orderLabel(o.id))}</strong><span class="badge">${attrText(labels[o.status]||o.status)}</span></div></header><div class="receipt-info"><div><strong>訂購人</strong>${attrText(o.name)}</div><div><strong>開單時間</strong>${attrText(new Date(o.createdAt).toLocaleString('zh-TW',{timeZone:'Asia/Taipei',hour12:false}))}</div></div><table><thead><tr><th>品項</th><th>單價</th><th>數量</th><th>小計</th></tr></thead><tbody>${o.items.map(i=>{const returned=(o.returns||[]).filter(r=>r.id===i.id).reduce((s,r)=>s+r.qty,0);return `<tr><td><strong>${attrText(i.name)}</strong>${['shipped','returned'].includes(o.status)&&shippedQuantity(i)<i.qty?`<small>實出 ${shippedQuantity(i)} / ${attrText(i.unit||'件')}</small>`:''}${returned?`<small>退貨 ${returned} / ${attrText(i.unit||'件')}</small>`:''}</td><td>${i.market?'時價':money(i.price)}</td><td>${i.qty} / ${attrText(i.unit||'件')}</td><td>${i.market?'時價':money(i.price*(['shipped','returned'].includes(o.status)?shippedQuantity(i):i.qty))}</td></tr>`}).join('')}</tbody></table><footer><div><span>訂單金額</span><strong>${money(o.total)}${o.market?'＋時價':''}</strong></div><div><span>退貨金額</span><span>${money((o.returns||[]).reduce((s,r)=>s+r.price*r.qty,0))}</span></div></footer>${o.note?`<p class="receipt-note"><strong>備註：</strong>${attrText(o.note)}</p>`:''}</article>`).join('')||'<div class="empty">目前沒有訂單。</div>';
+      target.innerHTML=orders.map(o=>`<article class="history-receipt"><header><h3>福緣訂單明細</h3><div class="receipt-number"><strong>${attrText(orderLabel(o.id))}</strong><span class="badge">${attrText(labels[o.status]||o.status)}</span></div></header><div class="receipt-info"><div><strong>訂購人</strong>${attrText(o.name)}</div><div><strong>開單時間</strong>${attrText(new Date(o.createdAt).toLocaleString('zh-TW',{timeZone:'Asia/Taipei',hour12:false}))}</div></div><table><thead><tr><th>品項</th><th>單價</th><th>數量</th><th>小計</th></tr></thead><tbody>${receiptSections(o.items,id=>product(id)?.category).map(section=>`<tr class="receipt-category"><td colspan="4">${attrText(section.category)}</td></tr>`+section.entries.map(({item:i})=>{const returned=(o.returns||[]).filter(r=>r.id===i.id).reduce((s,r)=>s+r.qty,0);return `<tr><td><strong>${attrText(i.name)}</strong>${['shipped','returned'].includes(o.status)&&shippedQuantity(i)<i.qty?`<small>實出 ${shippedQuantity(i)} / ${attrText(i.unit||'件')}</small>`:''}${returned?`<small>退貨 ${returned} / ${attrText(i.unit||'件')}</small>`:''}</td><td>${i.market?'時價':money(i.price)}</td><td>${i.qty} / ${attrText(i.unit||'件')}</td><td>${i.market?'時價':money(i.price*(['shipped','returned'].includes(o.status)?shippedQuantity(i):i.qty))}</td></tr>`}).join('')).join('')}</tbody></table><footer><div><span>訂單金額</span><strong>${money(o.total)}${o.market?'＋時價':''}</strong></div><div><span>退貨金額</span><span>${money((o.returns||[]).reduce((s,r)=>s+r.price*r.qty,0))}</span></div></footer>${o.note?`<p class="receipt-note"><strong>備註：</strong>${attrText(o.note)}</p>`:''}</article>`).join('')||'<div class="empty">目前沒有訂單。</div>';
       }catch(e){target.textContent=e.message;}
     }
     document.getElementById('refreshMyOrders').onclick=loadMyOrders;
