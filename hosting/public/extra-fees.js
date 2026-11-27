@@ -9,3 +9,8 @@ export function validateExtraFee(item){
  if(item.name!==f.name||item.qty!==1||item.unit!=='筆'||!Number.isSafeInteger(item.price)||item.price<=0||item.price>100000000)invalid();
  return f;
 }
+
+export function requireRentAmount(value){
+ if(value===undefined||value===null||String(value).trim()==='')throw Object.assign(Error('請先輸入租金位子，沒有費用請填 0。'),{status:400});
+ const amount=Number(value);if(!Number.isSafeInteger(amount)||amount<0||amount>100000000)invalid();return amount;
+}

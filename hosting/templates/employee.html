@@ -329,7 +329,7 @@
 
   <script src="/cloud-sync.js" data-staff-session="true"></script>
   <script type="module">
-    import {EXTRA_FEES,isExtraFee,extraFeeItems} from "./assets/extra-fees.js?v=20261127";
+    import {EXTRA_FEES,isExtraFee,extraFeeItems,requireRentAmount} from "./assets/extra-fees.js?v=rent-required-20261127";
     import {orderLabel,sourceLabel,sourceClass} from "/order-display.js";
     import {catalogOrder,catalogGroups} from "/catalog-order.js";
     document.addEventListener('click',async e=>{if(!e.target.closest('[data-copy-order-url]'))return;try{await navigator.clipboard.writeText('https://evil-deny.github.io/order/');alert('網址已複製，請貼到 Safari／Chrome 開啟。');}catch{prompt('請複製以下網址並貼到 Safari／Chrome：','https://evil-deny.github.io/order/');}});
@@ -513,7 +513,7 @@
       renderSupplyTabs();
       document.querySelector('.staff-search-tools').hidden=activeSupply==='fees';
       if(activeSupply==='fees'){
-        document.getElementById('productList').innerHTML=`<section class="staff-list"><div class="staff-list-heading"><h2>額外費用</h2><span>金額以元為單位</span></div><div class="extra-fee-fields">${EXTRA_FEES.map(f=>`<label>${f.name}<input type="number" min="0" max="100000000" step="1" inputmode="numeric" data-fee-amount="${f.key}" value="${attrText(feeAmounts[f.key])}" placeholder="輸入金額" aria-label="${f.name}金額（元）"></label>`).join('')}</div></section>`;
+        document.getElementById('productList').innerHTML=`<section class="staff-list"><div class="staff-list-heading"><h2>額外費用</h2><span>金額以元為單位</span></div><div class="extra-fee-fields">${EXTRA_FEES.map(f=>`<label>${f.name}${f.key==='rent'?'（必填）':''}<input ${f.key==='rent'?'required aria-required="true"':''} type="number" min="0" max="100000000" step="1" inputmode="numeric" data-fee-amount="${f.key}" value="${attrText(feeAmounts[f.key])}" placeholder="${f.key==='rent'?'必填，沒有費用請填 0':'輸入金額'}" aria-label="${f.name}金額（元）"></label>`).join('')}</div></section>`;
         updateTotal();return;
       }
       const list=visibleProducts(),source=document.querySelector('.supply-tab.active span')?.textContent||'商品';
@@ -542,7 +542,7 @@
     }
 
     function renderReceipt(){
-      pendingOrder = { name:document.getElementById("customerName").value.trim(), note:document.getElementById("customerNote").value.trim(), items:cartItems(), createdAt:nowText(), createdAtISO:new Date().toISOString() };
+      pendingOrder = { name:document.getElementById("customerName").value.trim(), note:document.getElementById("customerNote").value.trim(), items:cartItems(), rentAmount:requireRentAmount(feeAmounts.rent), createdAt:nowText(), createdAtISO:new Date().toISOString() };
       drawReceipt();
     }
     function drawReceipt(){
@@ -561,7 +561,7 @@
             </div>
             <table class="receipt-table">
               <thead><tr><th>商品</th><th>單價</th><th>數量</th><th>小計</th></tr></thead>
-              <tbody>${pendingOrder.items.map((item,index)=>`<tr><td><strong>${itemName(item)}</strong><div class="receipt-edit" ${submitted||isExtraFee(item)?'hidden':''}><button data-receipt-dec="${index}">−</button><button data-receipt-inc="${index}">＋</button><button class="remove" data-receipt-remove="${index}">刪除</button></div></td><td>${money(itemPrice(item))}${isExtraFee(item)&&!submitted?`<button class="remove" data-receipt-remove="${index}">移除費用</button>`:""}</td><td>${item.qty} ${itemUnit(item)}</td><td>${money(itemSubtotal(item))}</td></tr>`).join("") || `<tr><td colspan="4">訂單已沒有品項。</td></tr>`}</tbody>
+              <tbody>${pendingOrder.items.map((item,index)=>`<tr><td><strong>${itemName(item)}</strong><div class="receipt-edit" ${submitted||isExtraFee(item)?'hidden':''}><button data-receipt-dec="${index}">−</button><button data-receipt-inc="${index}">＋</button><button class="remove" data-receipt-remove="${index}">刪除</button></div></td><td>${money(itemPrice(item))}${isExtraFee(item)&&item.id!=='fee-rent'&&!submitted?`<button class="remove" data-receipt-remove="${index}">移除費用</button>`:""}</td><td>${item.qty} ${itemUnit(item)}</td><td>${money(itemSubtotal(item))}</td></tr>`).join("") || `<tr><td colspan="4">訂單已沒有品項。</td></tr>`}</tbody>
             </table>
             <div class="receipt-total-row"><span>總金額</span><strong>${money(total)}</strong></div>
           </div>
@@ -700,7 +700,7 @@
     function syncPendingToPage(){
       standardCart={};
       activeProducts().forEach(p=>{ const input=document.getElementById("qty-"+p.id); if(input) input.value=0; });
-      customCart=[];feeAmounts={rent:"",electricity:""};
+      customCart=[];feeAmounts={rent:pendingOrder.rentAmount===0?"0":"",electricity:""};
       pendingOrder.items.forEach(item=>{
         if(isExtraFee(item)){const f=EXTRA_FEES.find(f=>f.id===item.id);feeAmounts[f.key]=String(item.price);}
         else if(item.custom) customCart.push({...item});
@@ -875,7 +875,7 @@
     });
     document.getElementById("openAdmin").addEventListener("click",()=>openModal("adminLogin"));
     document.getElementById("loginAdmin").addEventListener("click",()=>location.assign(FuyuanCloud.ADMIN));
-    document.getElementById("checkout").addEventListener("click",()=>{ if(!document.getElementById("customerName").value.trim()){ alert("請先輸入大名。"); return; } try{if(!cartItems().length){ alert("請至少選擇一個品項或輸入額外費用。"); return; }}catch(e){alert(e.message);return;} renderReceipt(); openModal("receiptModal"); });
+    document.getElementById("checkout").addEventListener("click",()=>{ if(!document.getElementById("customerName").value.trim()){ alert("請先輸入大名。"); return; } try{requireRentAmount(feeAmounts.rent);}catch(e){alert(e.message);activeSupply='fees';document.getElementById('search').value='';initFilters();renderProducts();document.querySelector('[data-fee-amount="rent"]')?.focus();return;} try{if(!cartItems().length){ alert("請至少選擇一個品項或輸入額外費用。"); return; }}catch(e){alert(e.message);return;} renderReceipt(); openModal("receiptModal"); });
     document.getElementById("printReceipt").addEventListener("click",()=>{ window.print(); });
     document.getElementById("shareReceiptImage").addEventListener("click",shareReceiptImage);
 
@@ -912,7 +912,7 @@
       if(pendingOrder.cloudSubmitted)return pendingOrder.cloudSubmitted;
       if(pendingOrder.submissionPromise)return pendingOrder.submissionPromise;
       const draft=pendingOrder;draft.cloudRequestId??=cloudRequestId||FuyuanCloud.random();cloudRequestId=draft.cloudRequestId;
-      draft.submissionPromise=FuyuanCloud.place({requestId:draft.cloudRequestId,channel:'order',name:draft.name,phone:'',note:draft.note,items:draft.items.map(i=>({id:i.id,name:i.custom?i.name:product(i.id).name,custom:!!i.custom,qty:i.qty,price:itemPrice(i),unit:i.unit??'件'}))}).then(o=>{draft.cloudSubmitted=o;cloudRequestId=null;clearCart();drawReceipt();FuyuanCloud.notice('訂單 '+orderLabel(o.id)+' 已送出。分享取消也不會撤回訂單。');return o;}).finally(()=>{delete draft.submissionPromise;});return draft.submissionPromise;
+      draft.submissionPromise=FuyuanCloud.place({requestId:draft.cloudRequestId,channel:'order',name:draft.name,phone:'',note:draft.note,rentAmount:requireRentAmount(draft.rentAmount),items:draft.items.map(i=>({id:i.id,name:i.custom?i.name:product(i.id).name,custom:!!i.custom,qty:i.qty,price:itemPrice(i),unit:i.unit??'件'}))}).then(o=>{draft.cloudSubmitted=o;cloudRequestId=null;clearCart();drawReceipt();FuyuanCloud.notice('訂單 '+orderLabel(o.id)+' 已送出。分享取消也不會撤回訂單。');return o;}).finally(()=>{delete draft.submissionPromise;});return draft.submissionPromise;
     }
     async function cloudAction(action){if(cloudBusy){FuyuanCloud.notice('正在同步，請稍候再操作。');return;}cloudBusy=true;try{await action();await refreshCloud(true);}catch(e){FuyuanCloud.notice(e.message);try{await refreshCloud(true);}catch{}}finally{cloudBusy=false;}}
     document.addEventListener('click',e=>{

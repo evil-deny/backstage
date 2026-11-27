@@ -63,7 +63,7 @@ test('永久刪除清除關聯帳款及舊備份，保留其他訂單並防止�
 
 test('員工可送出額外費用單，金額只計一次、重送不重複且可帶入結帳',async()=>{
  const feeItems=[{id:'fee-rent',name:'租金位子',price:5500,qty:1,unit:'筆',custom:true},{id:'fee-electricity',name:'電費',price:250,qty:1,unit:'筆',custom:true}];
- const body={requestId:'request-extra-fees',channel:'order',name:'費用測試',phone:'',items:feeItems};
+ const body={requestId:'request-extra-fees',channel:'order',rentAmount:5500,name:'費用測試',phone:'',items:feeItems};
  const post=async b=>handleBackstage(new Request('https://api.example.test/api/orders',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+staffToken},body:JSON.stringify(b)}),db,config);
  const r=await post(body);assert.equal(r.status,201);const placed=await r.json();assert.equal(placed.total,5750);
  assert.equal((await(await post(body)).json()).id,placed.id);
@@ -76,4 +76,9 @@ test('員工可送出額外費用單，金額只計一次、重送不重複且�
  assert.equal(bill.payableCents,575000);assert(bill.lines.every(i=>i.category==='額外費用'));
  for(const change of [{qty:2},{price:-1},{price:1.5},{unit:'包'},{name:'改名'}]){const invalid=await post({...body,requestId:crypto.randomUUID(),items:[{...feeItems[0],...change}]});assert.equal(invalid.status,400);}
  assert.equal((await post({...body,requestId:crypto.randomUUID(),channel:'customer',phone:'0912345678'})).status,403);
+ assert.equal((await post({...body,requestId:crypto.randomUUID(),rentAmount:undefined})).status,400);
+ assert.equal((await post({...body,requestId:crypto.randomUUID(),rentAmount:0})).status,400);
+ assert.equal((await post({...body,requestId:crypto.randomUUID(),rentAmount:500})).status,400);
+ const zero=await post({...body,requestId:crypto.randomUUID(),rentAmount:0,items:[feeItems[1]]});assert.equal(zero.status,201);assert.equal((await zero.json()).total,250);
+
 });
