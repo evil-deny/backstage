@@ -330,6 +330,7 @@
   <script src="/cloud-sync.js" data-staff-session="true"></script>
   <script type="module">
     import {EXTRA_FEES,isExtraFee,extraFeeItems,requireRentAmount} from "./assets/extra-fees.js?v=rent-required-20261127";
+    import {receiptShareGroups} from "./assets/receipt-share.js?v=20261127";
     import {orderLabel,sourceLabel,sourceClass} from "/order-display.js";
     import {catalogOrder,catalogGroups} from "/catalog-order.js";
     document.addEventListener('click',async e=>{if(!e.target.closest('[data-copy-order-url]'))return;try{await navigator.clipboard.writeText('https://evil-deny.github.io/order/');alert('網址已複製，請貼到 Safari／Chrome 開啟。');}catch{prompt('請複製以下網址並貼到 Safari／Chrome：','https://evil-deny.github.io/order/');}});
@@ -388,7 +389,7 @@
     function closeModal(id){ document.getElementById(id).classList.remove("show"); }
 
     function cartItems(){
-      const standard = activeProducts().map(p => ({id:p.id,name:p.name,code:p.code,price:p.price,unit:p.unit??"件",qty:Number(standardCart[p.id] || 0),custom:false})).filter(i => i.qty > 0);
+      const standard = activeProducts().map(p => ({id:p.id,name:p.name,code:p.code,category:p.category,price:p.price,unit:p.unit??"件",qty:Number(standardCart[p.id] || 0),custom:false})).filter(i => i.qty > 0);
       return [...standard, ...customCart.map(i => ({...i})),...extraFeeItems(feeAmounts)];
     }
     function orderTotal(order){ return order.items.reduce((sum,i)=>sum+itemSubtotal(i),0); }
@@ -594,14 +595,14 @@
       lines.forEach((part,index)=>ctx.fillText(part,x,y+index*lineHeight));
       return lines.length*lineHeight;
     }
-    function drawShareCanvas(){
-      const rows=pendingOrder.items.map(item=>({
+    function drawShareCanvas(items=pendingOrder.items,title="福緣訂單明細"){
+      const rows=items.map(item=>({
         name:itemName(item),
         price:money(itemPrice(item)),
         qty:String(item.qty)+" "+(item.unit??"件"),
         subtotal:money(itemSubtotal(item))
       }));
-      const total=pendingOrder.items.reduce((sum,i)=>sum+itemSubtotal(i),0);
+      const total=items.reduce((sum,i)=>sum+itemSubtotal(i),0);
       const width=1000;
       const padding=40;
       const nameWidth=430;
@@ -625,7 +626,7 @@
       ctx.textBaseline="top";
       ctx.font='bold 42px "Microsoft JhengHei", sans-serif';
       ctx.textAlign="center";
-      ctx.fillText("福緣訂單明細",width/2,28);
+      ctx.fillText(title,width/2,28);
       ctx.textAlign="left";
       ctx.font='26px "Microsoft JhengHei", sans-serif';
       ctx.fillText(`大名：${pendingOrder.name}`,padding,94);
@@ -678,19 +679,20 @@
       const shareButton=document.getElementById("shareReceiptImage");shareButton.disabled=true;
       try{
         await submitPendingOrder();
-        const canvas=drawShareCanvas();
-        const blob=await new Promise(resolve=>canvas.toBlob(resolve,"image/png"));
-        const filename=`福緣訂單明細_${pendingOrder.name}_${Date.now()}.png`;
-        const file=new File([blob],filename,{type:"image/png"});
-        if(navigator.canShare && navigator.canShare({files:[file]})){
-          await navigator.share({files:[file],title:"福緣訂單明細",text:`${pendingOrder.name} 訂單明細`});
+        const groups=receiptShareGroups(pendingOrder,id=>product(id)?.category),files=[],stamp=Date.now();
+        for(const group of groups){
+          const canvas=drawShareCanvas(group.items,group.title);
+          const blob=await new Promise(resolve=>canvas.toBlob(resolve,"image/png"));
+          if(!blob)throw Error('圖片產生失敗，請再試一次');
+          files.push(new File([blob],`${group.title}_${pendingOrder.name}_${stamp}.png`,{type:'image/png'}));
+        }
+        if(navigator.canShare && navigator.canShare({files})){
+          await navigator.share({files,title:'福緣訂單明細',text:pendingOrder.name+' 訂單明細'+(files.length>1?'、兩天一次檢貨單':'')});
         }else{
-          const link=document.createElement("a");
-          link.download=filename;
-          link.href=URL.createObjectURL(blob);
-          link.click();
-          URL.revokeObjectURL(link.href);
-          alert("此瀏覽器無法直接分享圖片，已改為下載明細圖片。");
+          for(const file of files){
+            const link=document.createElement('a');link.download=file.name;link.href=URL.createObjectURL(file);link.click();setTimeout(()=>URL.revokeObjectURL(link.href),1000);
+          }
+          alert(files.length>1?'已下載完整訂單及兩天一次檢貨單，共 2 張圖片，可一起傳送。':'此瀏覽器無法直接分享圖片，已改為下載明細圖片。');
         }
         closeModal("receiptModal");
       }catch(error){
