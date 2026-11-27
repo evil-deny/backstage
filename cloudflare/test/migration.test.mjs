@@ -60,3 +60,20 @@ test('永久刪除清除關聯帳款及舊備份，保留其他訂單並防止�
  const repeated=await handleBackstage(new Request('https://api.example.test/api/orders',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify({requestId:'request-purge',channel:'order',name:'測試人',items:[]})}),db,config);assert.equal(repeated.status,410);
  const fresh=await createBackup(db,backups);assert.equal((await readBackup(backups,fresh.id)).tables.order_records.rows.length,1);
 });
+
+test('員工可送出額外費用單，金額只計一次、重送不重複且可帶入結帳',async()=>{
+ const feeItems=[{id:'fee-rent',name:'租金位子',price:5500,qty:1,unit:'筆',custom:true},{id:'fee-electricity',name:'電費',price:250,qty:1,unit:'筆',custom:true}];
+ const body={requestId:'request-extra-fees',channel:'order',name:'費用測試',phone:'',items:feeItems};
+ const post=async b=>handleBackstage(new Request('https://api.example.test/api/orders',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+staffToken},body:JSON.stringify(b)}),db,config);
+ const r=await post(body);assert.equal(r.status,201);const placed=await r.json();assert.equal(placed.total,5750);
+ assert.equal((await(await post(body)).json()).id,placed.id);
+ const stored=JSON.parse(sql.prepare('SELECT body FROM order_records WHERE id=?').get(placed.id).body);
+ assert(stored.items.every(i=>i.category==='額外費用'&&i.unit==='筆'&&i.qty===1&&!i.market));
+ assert.equal(sql.prepare('SELECT stock FROM inventory').get().stock,20);
+ const picked=await request('staff/orders/'+placed.id,{action:'ship',revision:1,pickedIds:feeItems.map(i=>i.id)},staffToken);assert.equal(picked.status,200);
+ const {buildBill,billingDay}=await import('../../assets/billing-model.js');
+ const bill=buildBill({person:{name:'費用測試',phone:''},date:billingDay(stored.createdAt),rent:0,utilities:0,manualItems:[],marketPrices:{}},[picked.body],[],[],[]);
+ assert.equal(bill.payableCents,575000);assert(bill.lines.every(i=>i.category==='額外費用'));
+ for(const change of [{qty:2},{price:-1},{price:1.5},{unit:'包'},{name:'改名'}]){const invalid=await post({...body,requestId:crypto.randomUUID(),items:[{...feeItems[0],...change}]});assert.equal(invalid.status,400);}
+ assert.equal((await post({...body,requestId:crypto.randomUUID(),channel:'customer',phone:'0912345678'})).status,403);
+});

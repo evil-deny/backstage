@@ -1,6 +1,6 @@
 import {initDailySummary} from './daily-summary-ui.js?v=20261126';
 import {initBackups} from './backup-ui.js?v=purge-20261125';
-import {initBilling} from './billing-ui.js?v=daily-20261126';
+import {initBilling} from './billing-ui.js?v=fees-20261127';
 import {orderLabel,sourceLabel,sourceClass} from './order-display.js';
 import {analyze} from './metrics.js';
 import {catalogOrder} from './catalog-order.js';
