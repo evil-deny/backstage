@@ -334,7 +334,7 @@
   <script src="/cloud-sync.js" data-staff-session="true"></script>
   <script type="module">
     import {EXTRA_FEES,isExtraFee,extraFeeItems,requireRentAmount} from "./assets/extra-fees.js?v=rent-required-20261127";
-    import {receiptShareGroups,receiptSections} from "./assets/receipt-share.js?v=categories-20261127";
+    import {receiptShareGroups,receiptSections} from "./assets/receipt-share.js?v=picking-label-20261127";
     import {shippedQuantity,plannedQuantity} from "./assets/fulfillment.js?v=20261127";
     import {orderLabel,sourceLabel,sourceClass} from "/order-display.js";
     import {catalogOrder,catalogGroups} from "/catalog-order.js";
@@ -708,12 +708,12 @@
           files.push(new File([blob],`${group.title}_${pendingOrder.name}_${stamp}.png`,{type:'image/png'}));
         }
         if(navigator.canShare && navigator.canShare({files})){
-          await navigator.share({files,title:'福緣訂單明細',text:pendingOrder.name+' 訂單明細'+(files.length>1?'、兩天一次檢貨單':'')});
+          await navigator.share({files,title:'福緣訂單明細',text:pendingOrder.name+' 訂單明細'+(files.length>1?'、兩天一次揀貨單':'')});
         }else{
           for(const file of files){
             const link=document.createElement('a');link.download=file.name;link.href=URL.createObjectURL(file);link.click();setTimeout(()=>URL.revokeObjectURL(link.href),1000);
           }
-          alert(files.length>1?'已下載完整訂單及兩天一次檢貨單，共 2 張圖片，可一起傳送。':'此瀏覽器無法直接分享圖片，已改為下載明細圖片。');
+          alert(files.length>1?'已下載完整訂單及兩天一次揀貨單，共 2 張圖片，可一起傳送。':'此瀏覽器無法直接分享圖片，已改為下載明細圖片。');
         }
         closeModal("receiptModal");
       }catch(error){
