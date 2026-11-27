@@ -1,5 +1,6 @@
+import {shippedQuantity} from './fulfillment.js';
 import {renderBillImages} from './billing-image.js?v=quantity-20261127';
-import {billingDay,personKey,billOrders,returnCredits,buildBill} from './billing-model.js';
+import {billingDay,personKey,billOrders,returnCredits,buildBill} from './billing-model.js?v=fulfillment-20261127';
 import {orderLabel} from './order-display.js';
 const $=id=>document.getElementById(id),esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money=c=>'NT$ '+(c/100).toLocaleString('zh-TW',{maximumFractionDigits:2}),today=()=>billingDay(new Date().toISOString());
@@ -22,7 +23,7 @@ export function initBilling({api,ask,toast,getOrders,getProducts,refresh,run,csv
  function renderDraft(){
   const selected=person(),date=$('billingDate').value,orders=billOrders(getOrders(),data.bills,selected,date),pending=getOrders().filter(o=>o.channel==='order'&&!o.deletedAt&&personKey(o)===personKey(selected)&&billingDay(o.createdAt)===date&&['new','picking'].includes(o.status));
   $('billingPending').textContent=pending.length?`當日另有 ${pending.length} 筆尚未出貨，出貨後再結帳。`:'';
-  const lines=orders.flatMap(o=>o.items.filter(i=>i.picked!==false).map(i=>({...i,orderId:o.id,category:i.category??(i.custom?'客製化品項':getProducts().find(p=>p.id===i.id)?.category??'未記錄分類')})));
+  const lines=orders.flatMap(o=>o.items.filter(i=>shippedQuantity(i)>0).map(i=>({...i,qty:shippedQuantity(i),orderId:o.id,category:i.category??(i.custom?'客製化品項':getProducts().find(p=>p.id===i.id)?.category??'未記錄分類')})));
   if(lines.some(i=>i.category==='額外費用'))$('billingPending').textContent+=' 訂單已含額外費用，下方租金與廠電費只需填尚未計入的部分。';
   const groups=new Map();for(const i of lines){const key=source(i);if(!groups.has(key))groups.set(key,[]);groups.get(key).push(i);}
   $('billingOrderLines').innerHTML=[...groups].map(([group,items])=>`<section class="billing-source"><h3>${esc(group)} <span class="badge">${items.length} 項</span></h3><div class="table-wrap"><table><thead><tr><th>商品／單號</th><th>數量／單位</th><th>單價（元）</th><th>小計</th></tr></thead><tbody>${items.map(i=>`<tr><td><strong>${esc(i.name)}</strong><small>${esc(i.code??i.id)} · ${esc(orderLabel(i.orderId))}</small></td><td>${i.qty} / ${esc(i.unit??'件')}</td><td>${i.market?`<input class="billing-market" type="number" min="0" step="0.01" data-market="${esc(JSON.stringify([i.orderId,i.id]))}" aria-label="${esc(i.name)} 時價單價">`:money(i.price*100)}</td><td>${i.market?'待填時價':money(i.price*i.qty*100)}</td></tr>`).join('')}</tbody></table></div></section>`).join('')||'<p class="empty">當日沒有未結帳的已出貨訂單。租金與廠電費可於下方輸入。</p>';

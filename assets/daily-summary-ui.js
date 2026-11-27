@@ -1,4 +1,4 @@
-import {summarizeDaily,taiwanDay} from './daily-summary-model.js';
+import {summarizeDaily,taiwanDay} from './daily-summary-model.js?v=fulfillment-20261127';
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money=c=>'NT$ '+(c/100).toLocaleString('zh-TW',{maximumFractionDigits:2});
 const quantity=units=>[...units].map(([unit,qty])=>qty.toLocaleString('zh-TW')+' / '+unit).join('、')||'0';

@@ -1,3 +1,4 @@
+import {shippedQuantity} from './fulfillment.js';
 export const taiwanDay=iso=>new Date(iso).toLocaleDateString('sv-SE',{timeZone:'Asia/Taipei'});
 export const supplyName=category=>String(category||'').startsWith('兩天一次')?'兩天一次':category||'其他品項';
 export function summarizeDaily(orders,bills,products,{date,supply='all',status='all'}={}){
@@ -19,7 +20,7 @@ export function summarizeDaily(orders,bills,products,{date,supply='all',status='
    const market=item.market===true||item.price===0,price=market?prices.get(JSON.stringify([order.id,item.id])):Math.round(item.price*100);
    const missing=!Number.isSafeInteger(price)||price<0;
    const amount=missing?0:Math.round(price*item.qty);
-   row.qty+=item.qty;row.pendingQty+=pending?item.qty:0;row.shippedQty+=!pending&&item.picked!==false?item.qty:0;
+   row.qty+=item.qty;row.pendingQty+=pending?item.qty:0;row.shippedQty+=!pending?shippedQuantity(item):0;
    row.returnedQty+=(order.returns||[]).filter(r=>r.id===item.id).reduce((s,r)=>s+r.qty,0);
    row.amountCents+=amount;row.unpricedQty+=missing?item.qty:0;row.orderIds.add(order.id);rows.set(key,row);
    units.set(unit,(units.get(unit)||0)+item.qty);amountCents+=amount;unpricedQty+=missing?item.qty:0;

@@ -1,3 +1,4 @@
+import {shippedQuantity,plannedQuantity} from '../public/fulfillment.js';
 import {validateExtraFee,requireRentAmount} from '../public/extra-fees.js';
 import catalog from '../data/catalog.json';
 import {hashId} from './order-erasure.mjs';
@@ -7,7 +8,7 @@ import {catalogOrder} from '../public/catalog-order.js';
 import {movedCatalog} from '../public/catalog-layout.js';
 import {staffEmail,isStaff,isAdmin,allowedOrigin,corsHeaders,startGoogleLogin,googleLogin,revoke,digest,type AccessConfig} from './google-access';
 type Product={id:string;name:string;category:string;type:string;storage:string;image:string;price:number;orderPrice:number;orderUnit:string;customerUnit:string;stock:number|null;orderVisible:boolean;customerVisible:boolean;revision:number;displayNumber?:number|null;code?:string;deletedAt?:string;deletedCode?:string};
-type Item={id:string;name:string;price:number;qty:number;unit?:string;code?:string;category?:string;market:boolean;returnedAt?:string;custom?:boolean;picked?:boolean};
+type Item={id:string;name:string;price:number;qty:number;unit?:string;code?:string;category?:string;market:boolean;returnedAt?:string;custom?:boolean;picked?:boolean;pickQty?:number;shippedQty?:number};
 type Order={id:string;channel:string;name:string;phone:string;note:string;createdAt:string;status:string;items:Item[];returns:Item[];total:number;market:boolean;revision:number;shippedAt?:string;returnClosedAt?:string;archivedAt?:string;deletedAt?:string;deletedArchivedAt?:string;requestFingerprint?:string;submittedTotal?:number;submittedMarket?:boolean};
 const fail=(status:number,message:string):never=>{throw Object.assign(new Error(message),{status});};
 const text=(v:unknown,max=200):string=>typeof v==='string'&&v.trim().length&&v.length<=max?v.trim():fail(400,'文字欄位未填或過長');
@@ -113,7 +114,7 @@ export async function handleBackstage(request:Request,db:D1Database,config:Acces
    const rentAmount=channel==='order'?requireRentAmount(b.rentAmount):null;
    const name=text(b.name,60),phone=typeof b.phone==='string'?b.phone.trim().slice(0,40):'';
    if(channel==='customer'&&!/^[\d+()\s-]{6,40}$/.test(phone))fail(400,'請填寫有效聯絡電話');if(!Array.isArray(b.items)||!b.items.length||b.items.length>300)fail(400,'請選擇 1 至 300 項商品');
-   const ids=new Set<string>(),items:Item[]=[];for(const i of b.items){if(!i||typeof i!=='object')fail(400,'商品格式錯誤');if(i.custom){if(channel!=='order')fail(403,'顧客不能建立自訂價格品項');const fee=validateExtraFee(i);const qty=number(i.qty,9999);if(!qty||ids.has(i.id))fail(400,'自訂商品重複或數量為零');ids.add(i.id);items.push({id:text(i.id,80),name:text(i.name,120),price:number(i.price),market:i.price===0,qty,unit:text(i.unit??'件',20),custom:true,picked:false,...(fee?{category:'額外費用',fee:true}:{})});continue;}const p=await repo.product(text(i.id,80)),qty=number(i.qty,9999);if(p.deletedAt)fail(409,`${p.name} 已刪除，請更新商品`);if(!qty||ids.has(p.id))fail(400,'商品重複或數量為零');ids.add(p.id);if(!p[channel==='order'?'orderVisible':'customerVisible'])fail(409,`${p.name} 已隱藏`);const unit=channel==='order'?p.orderUnit:p.customerUnit;if(i.unit!==undefined&&i.unit!==unit)fail(409,`${p.name} 販售單位已調整，請更新商品`);const price=channel==='order'?p.orderPrice:p.price;if(i.price!==price)fail(409,`${p.name} 價格已調整，請更新商品`);if(p.stock!==null&&p.stock<qty)fail(409,`${p.name} 庫存不足`);items.push({id:p.id,name:p.name,code:p.code,category:p.category,price,unit,market:price===0,qty,custom:false,picked:false});}
+   const ids=new Set<string>(),items:Item[]=[];for(const i of b.items){if(!i||typeof i!=='object')fail(400,'商品格式錯誤');if(i.custom){if(channel!=='order')fail(403,'顧客不能建立自訂價格品項');const fee=validateExtraFee(i);const qty=number(i.qty,9999);if(!qty||ids.has(i.id))fail(400,'自訂商品重複或數量為零');ids.add(i.id);items.push({id:text(i.id,80),name:text(i.name,120),price:number(i.price),market:i.price===0,qty,unit:text(i.unit??'件',20),custom:true,picked:true,pickQty:qty,...(fee?{category:'額外費用',fee:true}:{})});continue;}const p=await repo.product(text(i.id,80)),qty=number(i.qty,9999);if(p.deletedAt)fail(409,`${p.name} 已刪除，請更新商品`);if(!qty||ids.has(p.id))fail(400,'商品重複或數量為零');ids.add(p.id);if(!p[channel==='order'?'orderVisible':'customerVisible'])fail(409,`${p.name} 已隱藏`);const unit=channel==='order'?p.orderUnit:p.customerUnit;if(i.unit!==undefined&&i.unit!==unit)fail(409,`${p.name} 販售單位已調整，請更新商品`);const price=channel==='order'?p.orderPrice:p.price;if(i.price!==price)fail(409,`${p.name} 價格已調整，請更新商品`);if(p.stock!==null&&p.stock<qty)fail(409,`${p.name} 庫存不足`);items.push({id:p.id,name:p.name,code:p.code,category:p.category,price,unit,market:price===0,qty,custom:false,picked:true,pickQty:qty});}
    if(channel==='order'){const rentItem=items.find(i=>i.id==='fee-rent');if((rentAmount===0&&rentItem)||(rentAmount!==0&&(!rentItem||rentItem.price!==rentAmount)))fail(400,'租金位子金額與訂單不一致，請返回修改後再送出');}
    const o:Order={...(channel==='order'?{orderedBy:await staffEmail(request,db),rentAmount}:{}),id:'FY-'+crypto.randomUUID(),channel,name,phone,note:typeof b.note==='string'?b.note.slice(0,500):'',createdAt:new Date().toISOString(),status:'new',items,returns:[],total:items.reduce((s,i)=>s+i.price*i.qty,0),market:items.some(i=>i.market),revision:1,requestFingerprint,submittedTotal:items.reduce((s,i)=>s+i.price*i.qty,0),submittedMarket:items.some(i=>i.market)};
    try{await repo.place(o,requestId);}catch(e){const previous=await repo.findRequest(requestId);if(previous)return reply(201,result(previous));if(String(e).includes('CHECK constraint')||String(e).includes('UNIQUE constraint'))fail(409,'價格、單位、上下架或庫存已變更，請更新商品後重試');throw e;}return reply(201,result(o));
@@ -128,17 +129,26 @@ export async function handleBackstage(request:Request,db:D1Database,config:Acces
    if(b.action==='delete'){const now=new Date().toISOString();o.deletedArchivedAt=o.archivedAt;o.deletedAt=now;o.archivedAt=now;if(['new','picking'].includes(o.status)){o.status='cancelled';restock=o.items;}}
    else if(b.action==='restoreOrder'&&o.deletedAt){if(o.deletedArchivedAt)o.archivedAt=o.deletedArchivedAt;else delete o.archivedAt;delete o.deletedAt;delete o.deletedArchivedAt;}
    else if(b.action==='pick'&&['new','picking'].includes(o.status)){
-    const item=o.items.find(i=>i.id===b.itemId)??fail(400,'揀貨品項錯誤');if(typeof b.picked!=='boolean')fail(400,'揀貨品項錯誤');item.picked=b.picked;o.status=o.items.some(i=>i.picked)?'picking':'new';
+    const item=o.items.find(i=>i.id===b.itemId)??fail(400,'揀貨品項錯誤');if(b.qty===undefined&&typeof b.picked!=='boolean')fail(400,'揀貨品項錯誤');const qty=b.qty===undefined?(b.picked?item.qty:0):number(b.qty,item.qty);item.pickQty=qty;item.picked=qty>0;o.status=o.items.some(i=>plannedQuantity(i)>0)?'picking':'new';
    }else if(b.action==='ship'&&['new','picking'].includes(o.status)){
-    if(b.pickedIds!==undefined&&(!Array.isArray(b.pickedIds)||b.pickedIds.some((id:any)=>typeof id!=='string'||!o.items.some(i=>i.id===id))))fail(400,'出貨品項錯誤');
-    const picked=new Set<string>(b.pickedIds??o.items.map(i=>i.id));o.items.forEach(i=>{i.picked=picked.has(i.id);});restock=o.items.filter(i=>!i.picked);o.status='shipped';o.shippedAt=new Date().toISOString();o.total=o.items.filter(i=>i.picked).reduce((s,i)=>s+i.price*i.qty,0);o.market=o.items.some(i=>i.picked&&i.market);
+    const quantities=new Map<string,number>();
+    if(b.shipQuantities!==undefined){
+     if(!Array.isArray(b.shipQuantities)||b.shipQuantities.length!==o.items.length)fail(400,'請提供每個品項的實際出貨數量');
+     for(const entry of b.shipQuantities){const item=o.items.find(i=>i.id===entry?.id);if(!item||quantities.has(item.id))fail(400,'出貨品項重複或錯誤');quantities.set(item.id,number(entry.qty,item.qty));}
+    }else if(b.pickedIds!==undefined){
+     if(!Array.isArray(b.pickedIds)||b.pickedIds.some((id:any)=>typeof id!=='string'||!o.items.some(i=>i.id===id)))fail(400,'出貨品項錯誤');
+     for(const item of o.items)quantities.set(item.id,b.pickedIds.includes(item.id)?(plannedQuantity(item)||item.qty):0);
+    }else{for(const item of o.items)quantities.set(item.id,item.pickQty===undefined?item.qty:plannedQuantity(item));}
+    restock=o.items.map(i=>({...i,qty:i.qty-quantities.get(i.id)!})).filter(i=>i.qty>0);
+    o.items.forEach(i=>{i.shippedQty=quantities.get(i.id)!;i.pickQty=i.shippedQty;i.picked=i.shippedQty>0;});
+    o.status='shipped';o.shippedAt=new Date().toISOString();o.total=o.items.reduce((s,i)=>s+i.price*shippedQuantity(i),0);o.market=o.items.some(i=>shippedQuantity(i)>0&&i.market);
    }else if(b.action==='cancel'&&['new','picking'].includes(o.status)){o.status='cancelled';restock=o.items;}
    else if(b.action==='archive'&&!['new','picking'].includes(o.status)){o.archivedAt=new Date().toISOString();}
    else if(b.action==='closeReturn'&&['shipped','returned'].includes(o.status)){o.returnClosedAt=new Date().toISOString();}
    else if(b.action==='return'&&['shipped','returned'].includes(o.status)){
     if(!Array.isArray(b.items)||!b.items.length)fail(400,'請選擇退貨商品');const ids=new Set();
-    restock=b.items.map((i:any)=>{if(!i||typeof i!=='object')fail(400,'退貨格式錯誤');const original=o.items.find(x=>x.id===i.id)??fail(400,'退貨品項錯誤');if(ids.has(i.id)||original.picked===false)fail(400,'未出貨或重複的品項不能退貨');ids.add(i.id);const qty=number(i.qty),returned=o.returns.filter(r=>r.id===i.id).reduce((s,r)=>s+r.qty,0);if(!qty||qty+returned>original.qty)fail(400,'退貨數量超過已出貨數量');return {...original,qty,returnedAt:new Date().toISOString()};});o.returns.push(...restock);o.status='returned';
-    if(o.items.filter(i=>i.picked!==false).every(i=>o.returns.filter(r=>r.id===i.id).reduce((sum,r)=>sum+r.qty,0)>=i.qty))o.returnClosedAt=new Date().toISOString();
+    restock=b.items.map((i:any)=>{if(!i||typeof i!=='object')fail(400,'退貨格式錯誤');const original=o.items.find(x=>x.id===i.id)??fail(400,'退貨品項錯誤');if(ids.has(i.id)||shippedQuantity(original)===0)fail(400,'未出貨或重複的品項不能退貨');ids.add(i.id);const qty=number(i.qty),returned=o.returns.filter(r=>r.id===i.id).reduce((s,r)=>s+r.qty,0);if(!qty||qty+returned>shippedQuantity(original))fail(400,'退貨數量超過已出貨數量');return {...original,qty,returnedAt:new Date().toISOString()};});o.returns.push(...restock);o.status='returned';
+    if(o.items.filter(i=>shippedQuantity(i)>0).every(i=>o.returns.filter(r=>r.id===i.id).reduce((sum,r)=>sum+r.qty,0)>=shippedQuantity(i)))o.returnClosedAt=new Date().toISOString();
    }else fail(400,'此訂單狀態不允許這項操作');return reply(200,await repo.transition(o,b.revision,restock));
   }
   if(path==='/api/admin/backup'&&method==='GET')return reply(200,{schema:1,exportedAt:new Date().toISOString(),products:await repo.products(true),orders:await repo.orders(),billing:await billingData(db)},{'Content-Disposition':'attachment; filename="backstage-backup.json"'});

@@ -83,3 +83,9 @@ npx wrangler d1 export DB --remote --output /private/fuyuan.sql
 `0010_staff_profiles.sql` 新增 `staff_profiles`，以實際登入信箱為主鍵。員工只能透過 `/api/staff/profile` 讀寫自己的大名，請求指定的其他信箱不會被採用。前端修改大名離開欄位時儲存，成功開單也在同一個交易保存；重新登入或換裝置會自動帶入，送單後不再清空大名。歷史訂單姓名不回寫。
 
 完整備份升為版本 2，包含帳號大名；舊版本 1 備份仍可讀取及還原（沒有帳號大名的舊檔以空表補齊）。部署前先套用此新增 migration。
+
+## 實際出貨數量
+
+新訂單每個品項預設 `pickQty=qty`、`picked=true`。既有訂單的勾選資料不批次覆寫。`pick` 操作可保存 0 至訂購數量的整數 `qty`；舊版 boolean `picked` 仍支援。完成出貨可傳 `shipQuantities:[{id,qty}]`，必須包含每個品項且不得重複。舊版 `pickedIds` 相容原本全有／全無操作，已保存的部分數量會保留。
+
+`items.qty` 保留原始訂購數量；`items.shippedQty` 記錄實出數量。完成出貨一次結案，不足數量釋放預留庫存，不作為待補出貨。庫存釋放與訂單 revision 更新在同一 transaction，重試不得重複回補。結帳、銷售及退貨上限使用 `shippedQty`，叫貨彙總保留原叫貨量並另列實出量。舊已出貨訂單未記錄 `shippedQty` 時依原有 `picked` 旗標與原數量讀取，既有結帳快照不重算。

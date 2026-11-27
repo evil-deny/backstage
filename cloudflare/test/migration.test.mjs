@@ -101,3 +101,23 @@ test('帳號大名依實際登入信箱保存，跨裝置讀取，不能指定�
  const oldRestored=new DatabaseSync(':memory:');oldRestored.exec(snapshotToSql(legacy));assert.equal(oldRestored.prepare('SELECT COUNT(*) AS n FROM staff_profiles').get().n,0);
  const invalid=structuredClone(snapshot);delete invalid.tables.staff_profiles;assert.throws(()=>snapshotToSql(invalid),/staff_profiles/);
 });
+
+test('訂購五件預設全數，實出三件只收三件，釋放庫存且退貨不超過三件',async()=>{
+ const post=async b=>handleBackstage(new Request('https://api.example.test/api/orders',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+staffToken},body:JSON.stringify(b)}),db,config);
+ const result=await post({requestId:crypto.randomUUID(),channel:'order',name:'部分出貨測試',phone:'',rentAmount:0,items:[{id:'p1',qty:5,price:40,unit:'件'}]});assert.equal(result.status,201);const placed=await result.json(),path='staff/orders/'+placed.id;
+ let current=JSON.parse(sql.prepare('SELECT body FROM order_records WHERE id=?').get(placed.id).body);
+ assert.equal(current.items[0].picked,true);assert.equal(current.items[0].pickQty,5);assert.equal(sql.prepare('SELECT stock FROM inventory').get().stock,15);
+ assert.equal((await request(path,{action:'pick',revision:1,itemId:'p1',qty:6},staffToken)).status,400);
+ const picked=await request(path,{action:'pick',revision:1,itemId:'p1',qty:3},staffToken);assert.equal(picked.status,200);assert.equal(picked.body.items[0].pickQty,3);
+ // Fresh GET, rather than browser state, retains the saved shipping quantity.
+ const reload=await handleBackstage(new Request('https://api.example.test/api/staff/orders',{headers:{Authorization:'Bearer '+staffToken}}),db,config);assert.equal((await reload.json()).find(o=>o.id===placed.id).items[0].pickQty,3);
+ assert.equal((await request(path,{action:'ship',revision:2,shipQuantities:[{id:'p1',qty:6}]},staffToken)).status,400);
+ const shipped=await request(path,{action:'ship',revision:2,shipQuantities:[{id:'p1',qty:3}]},staffToken);assert.equal(shipped.status,200);assert.equal(shipped.body.items[0].qty,5);assert.equal(shipped.body.items[0].shippedQty,3);assert.equal(shipped.body.total,120);assert.equal(sql.prepare('SELECT stock FROM inventory').get().stock,17);
+ assert.equal((await request(path,{action:'ship',revision:2,shipQuantities:[{id:'p1',qty:3}]},staffToken)).status,409);assert.equal(sql.prepare('SELECT stock FROM inventory').get().stock,17);
+ const {buildBill,billingDay,returnCredits}=await import('../../assets/billing-model.js');const {analyze}=await import('../../assets/metrics.js');const {summarizeDaily}=await import('../../assets/daily-summary-model.js');
+ const bill=buildBill({person:{name:'部分出貨測試',phone:''},date:billingDay(shipped.body.createdAt),rent:0,utilities:0,manualItems:[],marketPrices:{}},[shipped.body],[],[],[]);assert.equal(bill.lines[0].qty,3);assert.equal(bill.payableCents,12000);assert.equal(analyze([shipped.body]).qty,3);
+ const summary=summarizeDaily([shipped.body],[],[],{date:billingDay(shipped.body.createdAt)});assert.equal(summary.rows[0].qty,5);assert.equal(summary.rows[0].shippedQty,3);
+ assert.equal((await request(path,{action:'return',revision:3,items:[{id:'p1',qty:4}]},staffToken)).status,400);
+ const returned=await request(path,{action:'return',revision:3,items:[{id:'p1',qty:1}]},staffToken);assert.equal(returned.status,200);assert.equal(sql.prepare('SELECT stock FROM inventory').get().stock,18);assert.equal(analyze([returned.body]).revenue,80);assert.equal(returnCredits([returned.body],[{...bill,id:'test-bill'}],bill.person)[0].amountCents,4000);
+ const rest=await request(path,{action:'return',revision:4,items:[{id:'p1',qty:2}]},staffToken);assert.equal(rest.status,200);assert(rest.body.returnClosedAt);assert.equal(sql.prepare('SELECT stock FROM inventory').get().stock,20);
+});

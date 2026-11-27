@@ -1,3 +1,4 @@
+import {shippedQuantity} from './fulfillment.js';
 // Amounts are integer cents. Historical bills never read today's catalog prices.
 export const billingDay=iso=>new Date(iso).toLocaleDateString('sv-SE',{timeZone:'Asia/Taipei'});
 export const personKey=p=>JSON.stringify([String(p?.name??'').trim(),String(p?.phone??'').replace(/[\s-]/g,'')]);
@@ -20,12 +21,12 @@ export function buildBill(input,orders,products,bills,manualReturns=[]){
  if(!person.name||person.name.length>80||person.phone.length>40)invalid('請選擇或填寫批發人');
  const date=input.date;if(typeof date!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(date)||Number.isNaN(Date.parse(date))||new Date(date+'T00:00:00Z').toISOString().slice(0,10)!==date)invalid('請選擇有效結帳日期');
  const chosen=billOrders(orders,bills,person,date);
- const lines=chosen.flatMap(o=>o.items.filter(i=>i.picked!==false).map(i=>{
+ const lines=chosen.flatMap(o=>o.items.filter(i=>shippedQuantity(i)>0).map(i=>{
   const key=JSON.stringify([o.id,i.id]),p=products.find(p=>p.id===i.id),unitPriceCents=i.market?cents(input.marketPrices?.[key]):cents(i.price);
-  return {id:i.id,orderId:o.id,date:billingDay(o.createdAt),name:i.name,code:i.code??i.id,category:i.category??(i.custom?'客製化品項':p?.category??'未記錄分類'),qty:i.qty,unit:i.unit??'件',unitPriceCents,grossCents:Math.round(i.qty*unitPriceCents)};
+  return {id:i.id,orderId:o.id,date:billingDay(o.createdAt),name:i.name,code:i.code??i.id,category:i.category??(i.custom?'客製化品項':p?.category??'未記錄分類'),qty:shippedQuantity(i),unit:i.unit??'件',unitPriceCents,grossCents:Math.round(shippedQuantity(i)*unitPriceCents)};
  }));
  if(!Array.isArray(input.manualItems)||input.manualItems.length>100)invalid('手填品項格式錯誤');
- const manualItems=input.manualItems.map(i=>{if(!i||typeof i.name!=='string'||!i.name.trim()||i.name.length>120||typeof i.qty!=='number'||!Number.isFinite(i.qty)||i.qty<=0||i.qty>1e6||Math.abs(i.qty*1000-Math.round(i.qty*1000))>.00001)invalid('手填品項請填寫名稱與有效數量（最多三位小數）');const unitPriceCents=cents(i.price);if(typeof i.unit!=='string'||!i.unit.trim()||i.unit.length>20)invalid('請填寫手填品項單位');return {name:i.name.trim(),qty:i.qty,unit:i.unit.trim(),unitPriceCents,grossCents:Math.round(i.qty*unitPriceCents)};});
+ const manualItems=input.manualItems.map(i=>{if(!i||typeof i.name!=='string'||!i.name.trim()||i.name.length>120||typeof i.qty!=='number'||!Number.isFinite(i.qty)||i.qty<=0||i.qty>1e6||Math.abs(i.qty*1000-Math.round(i.qty*1000))>.00001)invalid('手填品項請填寫名稱與有效數量（最多三位小數）');const unitPriceCents=cents(i.price);if(typeof i.unit!=='string'||!i.unit.trim()||i.unit.length>20)invalid('請填寫手填品項單位');return {name:i.name.trim(),qty:shippedQuantity(i),unit:i.unit.trim(),unitPriceCents,grossCents:Math.round(i.qty*unitPriceCents)};});
  const rentCents=cents(input.rent),utilitiesCents=cents(input.utilities??0),goodsCents=lines.reduce((s,i)=>s+i.grossCents,0),manualCents=manualItems.reduce((s,i)=>s+i.grossCents,0),chargesCents=goodsCents+manualCents+rentCents+utilitiesCents;
  if(!Number.isSafeInteger(chargesCents)||chargesCents>1e12)invalid('結帳總額超過上限');
  if(!chosen.length&&!manualItems.length&&!rentCents&&!utilitiesCents)invalid('此日沒有未結帳的已出貨訂單，請加入手填品項、租金或廠電費');
